@@ -103,9 +103,7 @@ function sortNewest<T extends { created_at: string }>(items: T[]) {
 }
 
 export default function Home() {
-  const [deviceId] = useState(() =>
-    typeof window === "undefined" ? "" : getDeviceSessionId(),
-  );
+  const [deviceId, setDeviceId] = useState("");
   const [staff, setStaff] = useState<Staff[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -172,6 +170,13 @@ export default function Home() {
       setBackups(sortNewest((backupsResult.data ?? []) as Backup[]));
     }
     setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const loadDeviceId = async () => {
+      setDeviceId(getDeviceSessionId());
+    };
+    void loadDeviceId();
   }, []);
 
   useEffect(() => {
