@@ -31,6 +31,7 @@ create table if not exists staff (
   requested_role staff_role not null,
   role staff_role,
   approval_status approval_status not null default 'pending',
+  password_hash text,
   device_session_id text not null unique,
   approved_by uuid references staff(id),
   approved_at timestamptz,
@@ -38,6 +39,8 @@ create table if not exists staff (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table staff add column if not exists password_hash text;
 
 create table if not exists settings (
   id text primary key default 'event',
@@ -191,6 +194,7 @@ for each row execute function touch_updated_at();
 create or replace function create_staff_request(
   p_name text,
   p_requested_role staff_role,
+  p_password text,
   p_device_session_id text
 )
 returns staff
@@ -201,6 +205,10 @@ declare
   v_staff staff;
   v_staff_count integer;
 begin
+  if length(coalesce(p_password, '')) < 4 then
+    raise exception '비밀번호는 4자 이상 입력해 주세요.';
+  end if;
+
   select count(*) into v_staff_count from staff;
 
   insert into staff (
@@ -208,6 +216,7 @@ begin
     requested_role,
     role,
     approval_status,
+    password_hash,
     device_session_id,
     approved_at
   )
@@ -216,12 +225,14 @@ begin
     p_requested_role,
     case when v_staff_count = 0 and p_requested_role = 'admin' then 'admin'::staff_role else null end,
     case when v_staff_count = 0 and p_requested_role = 'admin' then 'approved'::approval_status else 'pending'::approval_status end,
+    crypt(p_password, gen_salt('bf')),
     p_device_session_id,
     case when v_staff_count = 0 and p_requested_role = 'admin' then now() else null end
   )
   on conflict (device_session_id) do update
     set name = excluded.name,
         requested_role = excluded.requested_role,
+        password_hash = excluded.password_hash,
         updated_at = now()
   returning * into v_staff;
 
@@ -234,6 +245,51 @@ begin
     'staff',
     v_staff.id::text,
     to_jsonb(v_staff)
+  );
+
+  return v_staff;
+end;
+$$;
+
+create or replace function staff_login_with_password(
+  p_name text,
+  p_password text,
+  p_device_session_id text
+)
+returns staff
+language plpgsql
+security definer
+as $$
+declare
+  v_staff staff;
+begin
+  select * into v_staff
+  from staff
+  where lower(name) = lower(trim(p_name))
+    and approval_status = 'approved'
+    and password_hash = crypt(p_password, password_hash)
+  order by approved_at desc nulls last, created_at desc
+  limit 1;
+
+  if not found then
+    raise exception '이름 또는 비밀번호가 맞지 않습니다.';
+  end if;
+
+  update staff
+  set device_session_id = p_device_session_id,
+      updated_at = now()
+  where id = v_staff.id
+  returning * into v_staff;
+
+  insert into activity_logs (staff_id, staff_name, staff_role, action_type, target_type, target_id, after_value)
+  values (
+    v_staff.id,
+    v_staff.name,
+    v_staff.role,
+    'staff_login',
+    'staff',
+    v_staff.id::text,
+    jsonb_build_object('device_session_id', p_device_session_id)
   );
 
   return v_staff;

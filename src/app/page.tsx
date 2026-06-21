@@ -399,21 +399,40 @@ function AccessScreen({
   hasAnyStaff: boolean;
   setNotice: (notice: Notice) => void;
 }) {
+  const [mode, setMode] = useState<"request" | "login">("request");
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [role, setRole] = useState<StaffRole>(hasAnyStaff ? "cashier" : "admin");
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
     if (!supabase) return;
     setSaving(true);
-    const { error } = await supabase.rpc("create_staff_request", {
-      p_name: name,
-      p_requested_role: role,
-      p_device_session_id: getDeviceSessionId(),
-    });
+    const { error } =
+      mode === "login"
+        ? await supabase.rpc("staff_login_with_password", {
+            p_name: name,
+            p_password: password,
+            p_device_session_id: getDeviceSessionId(),
+          })
+        : await supabase.rpc("create_staff_request", {
+            p_name: name,
+            p_requested_role: role,
+            p_password: password,
+            p_device_session_id: getDeviceSessionId(),
+          });
     setSaving(false);
     if (error) setNotice({ kind: "warn", text: error.message });
-    else setNotice({ kind: "ok", text: hasAnyStaff ? "승인 요청을 보냈습니다." : "첫 관리자로 시작합니다." });
+    else
+      setNotice({
+        kind: "ok",
+        text:
+          mode === "login"
+            ? "로그인되었습니다."
+            : hasAnyStaff
+              ? "승인 요청을 보냈습니다."
+              : "첫 관리자로 시작합니다.",
+      });
   };
 
   if (currentStaff?.approval_status === "pending") {
@@ -436,12 +455,28 @@ function AccessScreen({
         <Coffee className="mb-3 text-emerald-700" size={36} />
         <h1 className="text-2xl font-black">새누리교회 일일카페 POS</h1>
         <p className="mt-2 text-sm text-stone-600">
-          이름과 역할을 입력해 주세요. 승인 후 이 기기는 새로고침해도 유지됩니다.
+          이름과 비밀번호를 입력해 주세요. 승인 후 이 기기는 새로고침해도 유지됩니다.
         </p>
         {!hasAnyStaff ? (
           <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-bold text-emerald-800">
             첫 접속자는 관리자 계정으로 자동 승인됩니다.
           </p>
+        ) : null}
+        {hasAnyStaff ? (
+          <div className="mt-5 grid grid-cols-2 rounded-lg bg-stone-100 p-1">
+            <button
+              className={`h-11 rounded-md text-sm font-black ${mode === "request" ? "bg-white shadow-sm" : ""}`}
+              onClick={() => setMode("request")}
+            >
+              승인 요청
+            </button>
+            <button
+              className={`h-11 rounded-md text-sm font-black ${mode === "login" ? "bg-white shadow-sm" : ""}`}
+              onClick={() => setMode("login")}
+            >
+              기존 로그인
+            </button>
+          </div>
         ) : null}
         <label className="mt-5 block text-sm font-bold">이름</label>
         <input
@@ -450,22 +485,34 @@ function AccessScreen({
           onChange={(event) => setName(event.target.value)}
           placeholder="예: 김새누리"
         />
-        <label className="mt-4 block text-sm font-bold">요청 역할</label>
-        <select
+        <label className="mt-4 block text-sm font-bold">비밀번호</label>
+        <input
           className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
-          value={role}
-          onChange={(event) => setRole(event.target.value as StaffRole)}
-        >
-          <option value="admin">관리자</option>
-          <option value="cashier">계산</option>
-          <option value="maker">제조</option>
-        </select>
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="4자 이상"
+        />
+        {mode === "request" ? (
+          <>
+            <label className="mt-4 block text-sm font-bold">요청 역할</label>
+            <select
+              className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
+              value={role}
+              onChange={(event) => setRole(event.target.value as StaffRole)}
+            >
+              <option value="admin">관리자</option>
+              <option value="cashier">계산</option>
+              <option value="maker">제조</option>
+            </select>
+          </>
+        ) : null}
         <button
           className="mt-5 h-14 w-full rounded-lg bg-emerald-700 text-base font-black text-white disabled:opacity-50"
-          disabled={saving || name.trim().length < 2}
+          disabled={saving || name.trim().length < 2 || password.length < 4}
           onClick={submit}
         >
-          {saving ? "요청 중" : "승인 요청"}
+          {saving ? "처리 중" : mode === "login" ? "로그인" : "승인 요청"}
         </button>
       </section>
     </main>

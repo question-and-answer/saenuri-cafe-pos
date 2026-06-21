@@ -10,6 +10,7 @@ export type Staff = {
   requested_role: StaffRole;
   role: StaffRole | null;
   approval_status: ApprovalStatus;
+  password_hash: string | null;
   device_session_id: string;
   approved_by: string | null;
   approved_at: string | null;
