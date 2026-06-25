@@ -17,7 +17,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fullTime, orderNo, shortTime, won } from "@/lib/format";
 import { getDeviceSessionId, isSupabaseConfigured, supabase } from "@/lib/supabase";
 import type {
@@ -112,12 +112,17 @@ export default function Home() {
   const [notice, setNotice] = useState<Notice>(null);
   const [view, setView] = useState<View>("cashier");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const seenPendingApprovalCountRef = useRef<number | null>(null);
 
   const me = useMemo(
     () => staff.find((person) => person.device_token === deviceToken) ?? null,
     [deviceToken, staff],
   );
   const approved = me?.status === "approved" ? me : null;
+  const pendingApprovalCount = useMemo(
+    () => staff.filter((person) => person.status === "pending").length,
+    [staff],
+  );
 
   const reload = useCallback(async () => {
     if (!supabase) return;
@@ -216,6 +221,23 @@ export default function Home() {
     const timer = window.setTimeout(() => setNotice(null), 3000);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (approved?.role !== "admin") {
+      seenPendingApprovalCountRef.current = pendingApprovalCount;
+      return;
+    }
+
+    const previousCount = seenPendingApprovalCountRef.current;
+    if (previousCount !== null && pendingApprovalCount > previousCount) {
+      setNotice({
+        kind: "warn",
+        text: `새 직원 승인 요청이 ${pendingApprovalCount - previousCount}건 들어왔습니다.`,
+      });
+      setView("admin");
+    }
+    seenPendingApprovalCountRef.current = pendingApprovalCount;
+  }, [approved?.role, pendingApprovalCount]);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -335,6 +357,7 @@ export default function Home() {
             orderItems={orderItems}
             settings={settings}
             setNotice={setNotice}
+            refreshData={reload}
           />
         ) : null}
 
@@ -365,6 +388,7 @@ export default function Home() {
             settings={settings}
             setNotice={setNotice}
             log={log}
+            refreshData={reload}
           />
         ) : null}
       </div>
@@ -508,6 +532,7 @@ function CashierScreen({
   orderItems,
   settings,
   setNotice,
+  refreshData,
 }: {
   staff: Staff;
   menu: MenuItem[];
@@ -515,6 +540,7 @@ function CashierScreen({
   orderItems: OrderItem[];
   settings: Settings;
   setNotice: (notice: Notice) => void;
+  refreshData: () => Promise<void>;
 }) {
   const [cart, setCart] = useState<Cart>({});
   const [method, setMethod] = useState<PaymentMethod>("현금");
@@ -550,6 +576,7 @@ function CashierScreen({
       setNotice({ kind: "warn", text: error.message });
       return;
     }
+    await refreshData();
     setCart({});
     setReceived("");
     setPaymentStatus("결제 완료");
@@ -877,8 +904,10 @@ function AdminScreen(props: {
   settings: Settings;
   setNotice: (notice: Notice) => void;
   log: (action: string, targetType: string, targetId: string, beforeValue: unknown, afterValue: unknown) => Promise<void>;
+  refreshData: () => Promise<void>;
 }) {
   const [tab, setTab] = useState("summary");
+  const pendingStaffCount = props.staffList.filter((person) => person.status === "pending").length;
   const paidOrders = props.orders.filter((order) => order.status !== "취소" && order.payment_status === "결제 완료");
   const unpaidOrders = props.orders.filter((order) => order.status !== "취소" && order.payment_status === "미결제");
   const sales = paidOrders.reduce((sum, order) => sum + order.total_amount, 0);
@@ -900,10 +929,15 @@ function AdminScreen(props: {
         ].map(([id, label]) => (
           <button
             key={id}
-            className={`h-11 shrink-0 rounded-lg px-4 text-sm font-black ${tab === id ? "bg-emerald-700 text-white" : "bg-white"}`}
+            className={`flex h-11 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-black ${tab === id ? "bg-emerald-700 text-white" : "bg-white"}`}
             onClick={() => setTab(id)}
           >
-            {label}
+            <span>{label}</span>
+            {id === "staff" && pendingStaffCount > 0 ? (
+              <span className={`rounded-full px-2 py-0.5 text-xs ${tab === id ? "bg-white text-emerald-800" : "bg-amber-300 text-stone-950"}`}>
+                {pendingStaffCount}
+              </span>
+            ) : null}
           </button>
         ))}
         </div>
@@ -932,7 +966,7 @@ function AdminScreen(props: {
       {tab === "export" ? <ExportAdmin {...props} /> : null}
       {tab === "preview" ? (
         <div className="grid gap-4">
-          <CashierScreen staff={props.staff} menu={props.menu} orders={props.orders} orderItems={props.orderItems} settings={props.settings} setNotice={props.setNotice} />
+          <CashierScreen staff={props.staff} menu={props.menu} orders={props.orders} orderItems={props.orderItems} settings={props.settings} setNotice={props.setNotice} refreshData={props.refreshData} />
           <MakerScreen staff={props.staff} orders={props.activeOrders} orderItems={props.orderItems} setNotice={props.setNotice} log={props.log} />
         </div>
       ) : null}
