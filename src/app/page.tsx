@@ -643,47 +643,44 @@ function CashierScreen({
     <section className="relative grid gap-4 md:grid-cols-[1fr_360px]">
       <div className="space-y-4">
         <Panel title="메뉴" icon={<Coffee size={20} />}>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(138px,1fr))] gap-3">
             {availableMenu.map((item) => {
               const soldOut = item.is_sold_out || (!item.stock_unknown && item.stock_quantity === 0);
               const quantity = cart[item.id] ?? 0;
               return (
                 <div
                   key={item.id}
-                  className={`min-h-36 rounded-lg border p-3 ${
+                  className={`flex min-h-28 flex-col justify-between rounded-lg border p-3 ${
                     soldOut ? "border-stone-200 bg-stone-100 text-stone-400" : "border-stone-300 bg-white shadow-sm"
                   }`}
                 >
-                  <button
-                    disabled={soldOut}
-                    className="block w-full text-left disabled:cursor-not-allowed"
-                    onClick={() => setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }))}
-                  >
+                  <div className="text-left">
                     <div className="text-lg font-black">{item.name}</div>
                     <div className="mt-1 text-sm font-black text-emerald-700">{won(item.price)}</div>
-                    <div className="mt-2 text-xs font-black">
+                    <div className="mt-3 text-xs font-black">
                       {soldOut ? "품절" : item.stock_unknown ? "재고 미설정" : `재고 ${item.stock_quantity}`}
                     </div>
-                  </button>
-                  <div className="mt-3 grid grid-cols-[44px_1fr_44px] items-center gap-2">
-                    <QtyButton
+                  </div>
+                  <div className="mt-2 grid grid-cols-[40px_1fr_40px] items-center gap-1">
+                    <MenuQtyButton
+                      disabled={quantity === 0}
                       onClick={() =>
                         setCart((current) => ({ ...current, [item.id]: Math.max((current[item.id] ?? 0) - 1, 0) }))
                       }
                     >
                       -
-                    </QtyButton>
-                    <div className={`grid h-11 place-items-center rounded-lg text-xl font-black ${quantity ? "bg-emerald-50 text-emerald-800" : "bg-stone-50 text-stone-400"}`}>
+                    </MenuQtyButton>
+                    <div className={`grid h-10 place-items-center rounded-lg text-2xl font-black ${quantity ? "text-emerald-800" : "text-stone-400"}`}>
                       {quantity}
                     </div>
-                    <QtyButton
+                    <MenuQtyButton
                       disabled={soldOut}
                       onClick={() => {
                         if (!soldOut) setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }));
                       }}
                     >
                       +
-                    </QtyButton>
+                    </MenuQtyButton>
                   </div>
                 </div>
               );
@@ -1480,6 +1477,26 @@ function QtyButton({
   return (
     <button
       className="h-10 w-10 rounded-lg bg-stone-950 text-xl font-black text-white disabled:bg-stone-300"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuQtyButton({
+  onClick,
+  children,
+  disabled = false,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      className="grid h-10 w-10 place-items-center rounded-lg text-3xl font-black text-orange-600 disabled:text-stone-300"
       disabled={disabled}
       onClick={onClick}
     >
