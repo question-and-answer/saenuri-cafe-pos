@@ -6,6 +6,7 @@ import {
   Coffee,
   Download,
   History,
+  ImagePlus,
   LogOut,
   Package,
   ShieldCheck,
@@ -70,6 +71,7 @@ const actionText: Record<string, string> = {
   menu_created: "메뉴 추가",
   menu_changed: "메뉴 변경",
   inventory_changed: "재고 변경",
+  settings_changed: "설정 변경",
   backup_created: "백업 생성",
   export_created: "엑셀 내보내기",
 };
@@ -593,9 +595,16 @@ function CashierScreen({
         ) : (
           <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-4">
             <div className="font-black">계좌이체</div>
-            <p className="mt-1 text-sm text-stone-600">{settings.bank_account || "관리자가 계좌번호를 입력할 수 있습니다."}</p>
-            <div className="mt-3 grid aspect-square place-items-center rounded-lg bg-white text-sm font-black text-stone-400">
-              QR 코드 자리
+            <p className="mt-1 whitespace-pre-line text-sm text-stone-700">
+              {settings.bank_account || "관리자가 계좌번호를 입력할 수 있습니다."}
+            </p>
+            <div className="mt-3 grid aspect-square place-items-center overflow-hidden rounded-lg bg-white text-sm font-black text-stone-400">
+              {settings.bank_qr_note ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={settings.bank_qr_note} alt="계좌이체 QR 코드" className="h-full w-full object-contain p-2" />
+              ) : (
+                "QR 코드 자리"
+              )}
             </div>
             <button className="mt-3 h-12 w-full rounded-lg bg-emerald-700 font-black text-white" onClick={() => setPaymentStatus("결제 완료")}>
               계좌이체 완료
@@ -739,6 +748,7 @@ function AdminScreen(props: {
           ["menu", "메뉴"],
           ["inventory", "재고"],
           ["history", "기록"],
+          ["settings", "설정"],
           ["export", "백업"],
           ["preview", "미리보기"],
         ].map(([id, label]) => (
@@ -771,6 +781,7 @@ function AdminScreen(props: {
       {tab === "menu" ? <MenuAdmin {...props} /> : null}
       {tab === "inventory" ? <InventoryAdmin {...props} /> : null}
       {tab === "history" ? <HistoryAdmin logs={props.logs} /> : null}
+      {tab === "settings" ? <SettingsAdmin key={props.settings.updated_at} {...props} /> : null}
       {tab === "export" ? <ExportAdmin {...props} /> : null}
       {tab === "preview" ? (
         <div className="grid gap-4">
@@ -1030,6 +1041,102 @@ function HistoryAdmin({ logs }: { logs: ActivityLog[] }) {
           </div>
         ))}
       </div>
+    </Panel>
+  );
+}
+
+function SettingsAdmin({
+  settings,
+  setNotice,
+  log,
+}: {
+  settings: Settings;
+  setNotice: (notice: Notice) => void;
+  log: (action: string, targetType: string, targetId: string, beforeValue: unknown, afterValue: unknown) => Promise<void>;
+}) {
+  const [bankAccount, setBankAccount] = useState(settings.bank_account);
+  const [qrImage, setQrImage] = useState(settings.bank_qr_note);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!supabase) return;
+    setSaving(true);
+    const after = { bank_account: bankAccount, bank_qr_note: qrImage };
+    const { error } = await supabase.from("settings").update(after).eq("id", "event");
+    setSaving(false);
+    if (error) setNotice({ kind: "warn", text: error.message });
+    else {
+      await log(
+        "settings_changed",
+        "settings",
+        "event",
+        { bank_account: settings.bank_account, bank_qr_note: settings.bank_qr_note ? "QR 등록됨" : "" },
+        { bank_account: bankAccount, bank_qr_note: qrImage ? "QR 등록됨" : "" },
+      );
+      setNotice({ kind: "ok", text: "계좌 설정이 저장되었습니다." });
+    }
+  };
+
+  const uploadQr = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setNotice({ kind: "warn", text: "이미지 파일을 선택해 주세요." });
+      return;
+    }
+    if (file.size > 700_000) {
+      setNotice({ kind: "warn", text: "QR 이미지는 700KB 이하로 올려 주세요." });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setQrImage(String(reader.result ?? ""));
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <Panel title="계좌 설정" icon={<ImagePlus size={20} />}>
+      <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+        <div>
+          <label className="text-sm font-black">계좌 안내 문구</label>
+          <textarea
+            className="mt-2 h-36 w-full rounded-lg border border-stone-300 p-3"
+            value={bankAccount}
+            onChange={(event) => setBankAccount(event.target.value)}
+            placeholder={"은행: \n계좌: \n예금주: "}
+          />
+          <p className="mt-2 text-xs font-bold text-stone-500">
+            주문 담당 화면에서 계좌이체 선택 시 그대로 표시됩니다.
+          </p>
+        </div>
+        <div>
+          <label className="text-sm font-black">QR 이미지</label>
+          <div className="mt-2 grid aspect-square place-items-center overflow-hidden rounded-lg border border-dashed border-stone-300 bg-white text-sm font-black text-stone-400">
+            {qrImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={qrImage} alt="업로드한 QR 코드" className="h-full w-full object-contain p-3" />
+            ) : (
+              "QR 미등록"
+            )}
+          </div>
+          <input
+            className="mt-3 block w-full text-sm"
+            type="file"
+            accept="image/*"
+            onChange={(event) => uploadQr(event.target.files?.[0])}
+          />
+          {qrImage ? (
+            <button className="mt-2 h-10 w-full rounded-lg bg-stone-100 text-sm font-black" onClick={() => setQrImage("")}>
+              QR 삭제
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <button
+        className="mt-4 h-12 w-full rounded-lg bg-emerald-700 font-black text-white disabled:opacity-50"
+        disabled={saving}
+        onClick={save}
+      >
+        {saving ? "저장 중" : "계좌 설정 저장"}
+      </button>
     </Panel>
   );
 }
