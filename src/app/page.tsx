@@ -38,6 +38,8 @@ import type {
 } from "@/lib/types";
 
 type View = "cashier" | "maker" | "admin";
+type MakerLayout = "auto" | "portrait" | "landscape";
+type MakerDensity = "normal" | "compact";
 type Notice = { kind: "ok" | "warn"; text: string } | null;
 
 const roleLabel: Record<StaffRole, string> = {
@@ -269,7 +271,7 @@ export default function Home() {
         : view;
 
   return (
-    <main className="min-h-screen bg-[#f7f7f4] pb-24 text-stone-950">
+    <main className="min-h-screen overflow-x-hidden bg-[#f7f7f4] pb-24 text-stone-950">
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-[#f7f7f4]/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div>
@@ -311,8 +313,8 @@ export default function Home() {
         </div>
       ) : null}
 
-      <div className="mx-auto grid max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[220px_1fr]">
-        <nav className="grid grid-cols-3 gap-2 lg:block lg:space-y-2">
+      <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-4 px-4 py-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <nav className="grid min-w-0 grid-cols-3 gap-2 lg:block lg:space-y-2">
           <NavButton active={activeView === "cashier"} onClick={() => setView("cashier")}>
             주문하기
           </NavButton>
@@ -721,6 +723,39 @@ function MakerScreen({
   setNotice: (notice: Notice) => void;
   log: (action: string, targetType: string, targetId: string, beforeValue: unknown, afterValue: unknown) => Promise<void>;
 }) {
+  const [layout, setLayout] = useState<MakerLayout>("auto");
+  const [density, setDensity] = useState<MakerDensity>("normal");
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      const savedLayout = localStorage.getItem("maker-layout");
+      const savedDensity = localStorage.getItem("maker-density");
+      if (savedLayout === "auto" || savedLayout === "portrait" || savedLayout === "landscape") {
+        setLayout(savedLayout);
+      }
+      if (savedDensity === "normal" || savedDensity === "compact") {
+        setDensity(savedDensity);
+      }
+    });
+  }, []);
+
+  const setMakerLayout = (value: MakerLayout) => {
+    setLayout(value);
+    localStorage.setItem("maker-layout", value);
+  };
+
+  const setMakerDensity = (value: MakerDensity) => {
+    setDensity(value);
+    localStorage.setItem("maker-density", value);
+  };
+
+  const gridClass =
+    layout === "portrait"
+      ? "grid-cols-1"
+      : layout === "landscape"
+        ? "grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
+        : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3";
+
   const advance = async (order: Order) => {
     if (!supabase) return;
     const next = nextStatus[order.status];
@@ -736,7 +771,39 @@ function MakerScreen({
 
   return (
     <Panel title="제조 화면" icon={<Ticket size={20} />}>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="mb-4 grid gap-2 rounded-lg bg-stone-50 p-2 sm:grid-cols-[1fr_auto]">
+        <div className="grid grid-cols-3 gap-1 rounded-lg bg-white p-1">
+          {[
+            ["auto", "자동"],
+            ["portrait", "세로"],
+            ["landscape", "가로"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              className={`h-10 rounded-md text-sm font-black ${layout === value ? "bg-stone-950 text-white" : "bg-stone-50"}`}
+              onClick={() => setMakerLayout(value as MakerLayout)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-white p-1">
+          {[
+            ["normal", "기본"],
+            ["compact", "작게"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              className={`h-10 rounded-md px-3 text-sm font-black ${density === value ? "bg-emerald-700 text-white" : "bg-stone-50"}`}
+              onClick={() => setMakerDensity(value as MakerDensity)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className={`grid min-w-0 gap-3 ${gridClass}`}>
         {orders.length ? (
           orders.map((order) => (
             <KitchenTicket
@@ -744,6 +811,7 @@ function MakerScreen({
               order={order}
               items={orderItems.filter((item) => item.order_id === order.id)}
               disabled={staff.role === "cashier"}
+              compact={density === "compact"}
               onAdvance={() => advance(order)}
             />
           ))
@@ -759,35 +827,37 @@ function KitchenTicket({
   order,
   items,
   disabled,
+  compact,
   onAdvance,
 }: {
   order: Order;
   items: OrderItem[];
   disabled: boolean;
+  compact: boolean;
   onAdvance: () => void;
 }) {
   return (
-    <article className="rounded-lg border-2 border-stone-950 bg-white p-4">
+    <article className={`rounded-lg border-2 border-stone-950 bg-white ${compact ? "p-3" : "p-4"}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-3xl font-black">#{orderNo(order.order_number)}</div>
-          <div className="mt-1 text-sm font-black text-stone-500">{shortTime(order.created_at)}</div>
+          <div className={`${compact ? "text-2xl" : "text-3xl"} font-black`}>#{orderNo(order.order_number)}</div>
+          <div className={`${compact ? "mt-0 text-xs" : "mt-1 text-sm"} font-black text-stone-500`}>{shortTime(order.created_at)}</div>
         </div>
         <StatusBadge status={order.status} />
       </div>
       {order.payment_status === "미결제" ? (
-        <div className="mt-3 rounded-lg bg-amber-100 p-3 text-sm font-black text-amber-900">미결제</div>
+        <div className={`${compact ? "mt-2 p-2 text-xs" : "mt-3 p-3 text-sm"} rounded-lg bg-amber-100 font-black text-amber-900`}>미결제</div>
       ) : null}
-      <div className="my-4 space-y-2">
+      <div className={`${compact ? "my-3 space-y-1" : "my-4 space-y-2"}`}>
         {items.map((item) => (
-          <div key={item.id} className="flex justify-between text-xl font-black">
+          <div key={item.id} className={`flex justify-between gap-2 font-black ${compact ? "text-base" : "text-xl"}`}>
             <span>{item.item_name_snapshot}</span>
             <span>x {item.quantity}</span>
           </div>
         ))}
       </div>
       {nextAction[order.status] ? (
-        <button className="h-14 w-full rounded-lg bg-stone-950 text-lg font-black text-white disabled:bg-stone-300" disabled={disabled} onClick={onAdvance}>
+        <button className={`${compact ? "h-11 text-base" : "h-14 text-lg"} w-full rounded-lg bg-stone-950 font-black text-white disabled:bg-stone-300`} disabled={disabled} onClick={onAdvance}>
           {nextAction[order.status]}
         </button>
       ) : null}
@@ -818,8 +888,9 @@ function AdminScreen(props: {
   const sales = paidOrders.reduce((sum, order) => sum + order.total_amount, 0);
 
   return (
-    <section className="space-y-4">
-      <div className="flex gap-2 overflow-x-auto pb-1">
+    <section className="min-w-0 space-y-4">
+      <div className="max-h-28 min-w-0 overflow-x-auto overflow-y-auto rounded-lg bg-[#f7f7f4] pb-1">
+        <div className="flex w-max min-w-full gap-2">
         {[
           ["summary", "요약"],
           ["orders", "주문"],
@@ -839,11 +910,12 @@ function AdminScreen(props: {
             {label}
           </button>
         ))}
+        </div>
       </div>
 
       {tab === "summary" ? (
         <Panel title="오늘 요약" icon={<CheckCircle2 size={20} />}>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-7">
+          <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
             <Metric label="총 매출" value={won(sales)} />
             <Metric label="주문 수" value={`${props.orders.filter((o) => o.status !== "취소").length}건`} />
             <Metric label="결제 완료" value={`${paidOrders.length}건`} />
@@ -1382,7 +1454,7 @@ function itemsText(orderId: string, orderItems: OrderItem[]) {
 
 function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-stone-200 bg-white/70 p-4 shadow-sm">
+    <section className="min-w-0 rounded-lg border border-stone-200 bg-white/70 p-4 shadow-sm">
       <div className="mb-4 flex items-center gap-2">
         {icon}
         <h2 className="text-lg font-black">{title}</h2>
