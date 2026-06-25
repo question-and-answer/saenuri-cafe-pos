@@ -13,6 +13,7 @@ import {
   Ticket,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fullTime, orderNo, shortTime, won } from "@/lib/format";
@@ -489,6 +490,8 @@ function CashierScreen({
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("결제 완료");
   const [received, setReceived] = useState("");
   const [saving, setSaving] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(false);
 
   const availableMenu = menu.filter((item) => !item.is_hidden);
   const lines = Object.entries(cart)
@@ -515,11 +518,90 @@ function CashierScreen({
     setCart({});
     setReceived("");
     setPaymentStatus("결제 완료");
+    setCartOpen(false);
     setNotice({ kind: "ok", text: "주문이 접수되었습니다." });
   };
 
+  const orderPanel = (
+    <Panel title="현재 주문" icon={<Ticket size={20} />}>
+      <div className="space-y-2">
+        {lines.length ? (
+          lines.map((line) => (
+            <div key={line.item.id} className="flex items-center justify-between rounded-lg bg-stone-50 p-3">
+              <div>
+                <div className="font-black">{line.item.name}</div>
+                <div className="text-sm text-stone-600">{won(line.item.price)}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <QtyButton onClick={() => setCart((current) => ({ ...current, [line.item.id]: Math.max(line.quantity - 1, 0) }))}>-</QtyButton>
+                <strong className="w-8 text-center">{line.quantity}</strong>
+                <QtyButton onClick={() => setCart((current) => ({ ...current, [line.item.id]: line.quantity + 1 }))}>+</QtyButton>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="rounded-lg bg-stone-50 p-4 text-center text-sm font-black text-stone-500">메뉴를 선택해 주세요.</p>
+        )}
+      </div>
+
+      <div className="my-4 flex items-center justify-between border-t border-stone-200 pt-4">
+        <span className="font-black">총액</span>
+        <strong className="text-2xl">{won(total)}</strong>
+      </div>
+
+      <Segmented value={method} options={["현금", "계좌이체"]} onChange={(value) => setMethod(value as PaymentMethod)} />
+
+      {method === "현금" ? (
+        <div>
+          <label className="text-sm font-black">받은 금액</label>
+          <input
+            className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
+            inputMode="numeric"
+            value={received}
+            onChange={(event) => setReceived(event.target.value.replace(/\D/g, ""))}
+            placeholder={String(total)}
+          />
+          <div className="mt-2 rounded-lg bg-emerald-50 p-3 text-lg font-black text-emerald-800">
+            거스름돈 {won(change)}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-4">
+          <div className="font-black">계좌이체</div>
+          <p className="mt-1 whitespace-pre-line text-sm text-stone-700">
+            {settings.bank_account || "관리자가 계좌번호를 입력할 수 있습니다."}
+          </p>
+          <div className="mt-3 grid aspect-square max-h-56 place-items-center overflow-hidden rounded-lg bg-white text-sm font-black text-stone-400">
+            {settings.bank_qr_note ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={settings.bank_qr_note} alt="계좌이체 QR 코드" className="h-full w-full object-contain p-2" />
+            ) : (
+              "QR 코드 자리"
+            )}
+          </div>
+          <p className="mt-3 rounded-lg bg-white p-3 text-sm font-bold text-stone-600">
+            송금 완료 화면을 확인한 뒤 아래 결제 상태를 선택하세요.
+          </p>
+        </div>
+      )}
+
+      <Segmented value={paymentStatus} options={["결제 완료", "미결제"]} onChange={(value) => setPaymentStatus(value as PaymentStatus)} />
+      {paymentStatus === "미결제" ? (
+        <p className="rounded-lg bg-amber-100 p-3 text-sm font-black text-amber-900">미결제 주문입니다. 주문표에 경고가 표시됩니다.</p>
+      ) : null}
+
+      <button
+        className="mt-4 h-14 w-full rounded-lg bg-stone-950 text-lg font-black text-white disabled:opacity-50"
+        disabled={saving || !lines.length}
+        onClick={submit}
+      >
+        {saving ? "접수 중" : "주문 접수"}
+      </button>
+    </Panel>
+  );
+
   return (
-    <section className="grid gap-4 xl:grid-cols-[1fr_360px]">
+    <section className="relative grid gap-4 md:grid-cols-[1fr_360px]">
       <div className="space-y-4">
         <Panel title="메뉴" icon={<Coffee size={20} />}>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-3">
@@ -545,86 +627,44 @@ function CashierScreen({
           </div>
         </Panel>
 
-        <Panel title="최근 주문" icon={<Ticket size={20} />}>
-          <OrderList orders={orders.slice(0, 8)} orderItems={orderItems} />
-        </Panel>
+        <button
+          className="h-12 w-full rounded-lg bg-white text-sm font-black shadow-sm"
+          onClick={() => setRecentOpen((current) => !current)}
+        >
+          {recentOpen ? "최근 주문 닫기" : "최근 주문 보기"}
+        </button>
+
+        {recentOpen ? (
+          <Panel title="최근 주문" icon={<Ticket size={20} />}>
+            <OrderList orders={orders.slice(0, 8)} orderItems={orderItems} />
+          </Panel>
+        ) : null}
       </div>
 
-      <Panel title="현재 주문" icon={<Ticket size={20} />}>
-        <div className="space-y-2">
-          {lines.length ? (
-            lines.map((line) => (
-              <div key={line.item.id} className="flex items-center justify-between rounded-lg bg-stone-50 p-3">
-                <div>
-                  <div className="font-black">{line.item.name}</div>
-                  <div className="text-sm text-stone-600">{won(line.item.price)}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <QtyButton onClick={() => setCart((current) => ({ ...current, [line.item.id]: Math.max(line.quantity - 1, 0) }))}>-</QtyButton>
-                  <strong className="w-8 text-center">{line.quantity}</strong>
-                  <QtyButton onClick={() => setCart((current) => ({ ...current, [line.item.id]: line.quantity + 1 }))}>+</QtyButton>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="rounded-lg bg-stone-50 p-4 text-center text-sm font-black text-stone-500">메뉴를 선택해 주세요.</p>
-          )}
-        </div>
+      <aside className="hidden md:block">{orderPanel}</aside>
 
-        <div className="my-4 flex items-center justify-between border-t border-stone-200 pt-4">
-          <span className="font-black">총액</span>
-          <strong className="text-2xl">{won(total)}</strong>
-        </div>
+      <button
+        className="fixed bottom-4 left-4 right-4 z-30 h-14 rounded-lg bg-emerald-700 text-base font-black text-white shadow-lg md:hidden"
+        onClick={() => setCartOpen(true)}
+      >
+        현재 주문 {lines.reduce((sum, line) => sum + line.quantity, 0)}개 · {won(total)}
+      </button>
 
-        <Segmented value={method} options={["현금", "계좌이체"]} onChange={(value) => setMethod(value as PaymentMethod)} />
-
-        {method === "현금" ? (
-          <div>
-            <label className="text-sm font-black">받은 금액</label>
-            <input
-              className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
-              inputMode="numeric"
-              value={received}
-              onChange={(event) => setReceived(event.target.value.replace(/\D/g, ""))}
-              placeholder={String(total)}
-            />
-            <div className="mt-2 rounded-lg bg-emerald-50 p-3 text-lg font-black text-emerald-800">
-              거스름돈 {won(change)}
-            </div>
+      {cartOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button className="absolute inset-0 bg-stone-950/55" aria-label="현재 주문 닫기" onClick={() => setCartOpen(false)} />
+          <div className="absolute bottom-0 right-0 top-0 w-[88vw] max-w-sm overflow-y-auto bg-[#f7f7f4] p-4 shadow-2xl">
+            <button
+              className="mb-3 grid h-10 w-10 place-items-center rounded-lg bg-white shadow-sm"
+              aria-label="현재 주문 닫기"
+              onClick={() => setCartOpen(false)}
+            >
+              <X size={20} />
+            </button>
+            {orderPanel}
           </div>
-        ) : (
-          <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-4">
-            <div className="font-black">계좌이체</div>
-            <p className="mt-1 whitespace-pre-line text-sm text-stone-700">
-              {settings.bank_account || "관리자가 계좌번호를 입력할 수 있습니다."}
-            </p>
-            <div className="mt-3 grid aspect-square place-items-center overflow-hidden rounded-lg bg-white text-sm font-black text-stone-400">
-              {settings.bank_qr_note ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={settings.bank_qr_note} alt="계좌이체 QR 코드" className="h-full w-full object-contain p-2" />
-              ) : (
-                "QR 코드 자리"
-              )}
-            </div>
-            <p className="mt-3 rounded-lg bg-white p-3 text-sm font-bold text-stone-600">
-              송금 완료 화면을 확인한 뒤 아래 결제 상태를 선택하세요.
-            </p>
-          </div>
-        )}
-
-        <Segmented value={paymentStatus} options={["결제 완료", "미결제"]} onChange={(value) => setPaymentStatus(value as PaymentStatus)} />
-        {paymentStatus === "미결제" ? (
-          <p className="rounded-lg bg-amber-100 p-3 text-sm font-black text-amber-900">미결제 주문입니다. 주문표에 경고가 표시됩니다.</p>
-        ) : null}
-
-        <button
-          className="mt-4 h-14 w-full rounded-lg bg-stone-950 text-lg font-black text-white disabled:opacity-50"
-          disabled={saving || !lines.length}
-          onClick={submit}
-        >
-          {saving ? "접수 중" : "주문 접수"}
-        </button>
-      </Panel>
+        </div>
+      ) : null}
     </section>
   );
 }
