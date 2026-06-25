@@ -1,69 +1,75 @@
 # 새누리교회 일일카페 POS
 
-모바일 우선으로 만든 새누리교회 일일카페용 실시간 POS MVP입니다. 계산 직원은 휴대폰으로 주문을 받고, 제조 담당자는 실시간 주문 티켓을 확인하며, 관리자는 노트북에서 직원 승인, 메뉴, 재고, 주문, 기록, 백업, 엑셀 내보내기를 관리합니다.
+새누리교회 일일카페를 위한 모바일 우선 실시간 POS MVP입니다. 복잡한 식당 POS가 아니라, 하루 행사에서 주문 접수, 결제 확인, 제조 화면, 재고/품절, 기록, 엑셀 내보내기에 집중합니다.
 
-## 주요 기능
+## 기본 사용 흐름
 
-- 직원 이름/역할 요청, 관리자 승인, 기기별 세션 유지
-- 역할: 관리자, 계산, 제조
+1. 관리자는 `관리자 로그인`에서 관리자 코드로 접속합니다.
+2. 기본 관리자 코드는 `1234`입니다.
+3. 직원은 이름을 입력하고 `주문 담당` 또는 `제조 담당`으로 승인 요청합니다.
+4. 관리자는 `관리자 > 직원`에서 승인합니다.
+5. 주문 담당은 `주문하기`에서 주문을 접수합니다.
+6. 제조 담당은 `제조 화면`에서 주문 상태를 진행합니다.
+
+## 포함 기능
+
+- Supabase 실시간 동기화
+- 기기별 localStorage 세션 유지
+- 주문 번호 `#001`, `#002` 자동 증가
 - 기본 메뉴: 아이스티, 미숫가루, 루이보스, 아이스초코
-- 큰 버튼 중심의 모바일 주문 화면
-- 현금/계좌이체, 결제 완료/미결제, 거스름돈 계산
-- 제조 화면: 접수 → 제조 → 제조 완료 → 픽업 완료
-- 메뉴 추가/수정/숨김/삭제, 가격 변경, 품절 토글
-- 재고 미정 허용, 재고 설정 시 주문 생성/취소에 따른 자동 차감/반환
-- 활동 기록, 취소 주문 보존, 실수 복구용 취소 후 재주문 흐름
-- 관리자 자동 백업 1분 주기, 수동 백업, 엑셀 내보내기
+- 현금/계좌이체, 결제 완료/미결제
+- 현금 받은 금액과 거스름돈 계산
+- 미결제 주문 경고
+- 제조 티켓 화면: 접수 → 제조 중 → 제조 완료 → 픽업 완료
+- 메뉴 추가/수정, 품절, 숨김
+- 재고 미설정 허용, 재고 설정 시 자동 차감/취소 반환
+- 활동 기록
+- 자동 백업 1분 주기, 수동 백업
+- 엑셀 내보내기
 
-## 실행
+## 로컬 실행
 
 ```bash
 npm install
-cp .env.example .env.local
+copy .env.example .env.local
 npm run dev
 ```
 
-`.env.local`에 Supabase 값을 입력합니다.
+`.env.local`:
 
-```bash
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_publishable_or_anon_key
 ```
 
-브라우저에서 `http://localhost:3000`을 엽니다.
+## 새 Supabase 프로젝트 설정
 
-## Supabase 설정
+새 프로젝트를 만든 뒤 Supabase SQL Editor에서 아래 파일 전체를 실행합니다.
 
-1. Supabase 프로젝트를 만듭니다.
-2. SQL Editor에서 `supabase/schema.sql` 전체를 실행합니다.
-3. Project Settings → API에서 URL과 anon key를 `.env.local` 및 Vercel 환경 변수에 넣습니다.
-4. Realtime이 켜져 있는지 확인합니다. SQL에서 필요한 테이블을 `supabase_realtime` publication에 추가합니다.
-
-첫 접속자가 관리자 역할을 요청하면 자동 승인됩니다. 그 이후 직원은 관리자 승인 전까지 대기 화면만 볼 수 있습니다.
-
-## 배포
-
-Vercel에 이 폴더를 연결하고 다음 환경 변수를 설정합니다.
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-
-배포 전 확인:
-
-```bash
-npm run lint
-npm run build
+```text
+supabase/schema.sql
 ```
 
-## 운영 메모
+이 SQL은 fresh start용입니다. 기존 테이블이 있으면 삭제하고 새로 만듭니다.
 
-- 행사 전 관리자가 먼저 접속해 첫 관리자 계정을 만듭니다.
-- 메뉴 가격, 품절, 재고, 계좌번호/QR 자리 표시 설정을 확인합니다.
-- 직원 5명은 각자 본인 휴대폰에서 이름과 역할을 요청합니다.
-- 관리자는 직원 요청을 승인하고 필요하면 역할을 변경합니다.
-- 주문 취소는 영구 삭제가 아니라 기록에 남으며, 재고가 자동 반환됩니다.
-- 엑셀 내보내기에는 Orders, Order items, Payments, Inventory, Staff activity log, Canceled edited orders, Summary 시트가 포함됩니다.
+## Vercel 환경 변수
 
-## 보안 참고
+Vercel 프로젝트에 아래 값을 추가합니다.
 
-이 MVP는 하루 행사에서 빠르게 쓰는 운영 도구라 Supabase anon client와 앱 내부 승인 흐름을 사용합니다. 공개 인터넷에 오래 열어둘 시스템이라면 Supabase Auth, 엄격한 RLS 정책, 서버 액션/RPC 권한 검증을 더 강화하는 후속 작업을 권장합니다.
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+```
+
+환경 변수를 넣은 뒤 Deploy를 누르면 됩니다.
+
+## 행사 전 체크
+
+- 관리자 코드 `1234`로 접속되는지 확인
+- 직원 승인 요청/승인 테스트
+- 주문 접수 테스트
+- 제조 화면에 실시간으로 뜨는지 확인
+- 품절 메뉴가 주문 화면에서 비활성화되는지 확인
+- 재고 설정 후 주문 시 차감되는지 확인
+- 주문 취소 시 재고가 돌아오는지 확인
+- 엑셀 내보내기 테스트
