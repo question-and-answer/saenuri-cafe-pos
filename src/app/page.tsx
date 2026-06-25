@@ -89,7 +89,7 @@ const emptySettings: Settings = {
   bank_qr_note: "",
   show_cash_received: true,
   show_payment_status: true,
-  menu_info_click_adds_item: false,
+  menu_info_click_adds_item: true,
   updated_at: new Date().toISOString(),
 };
 
@@ -532,7 +532,7 @@ function CashierScreen({
   const change = Math.max(Number(received || 0) - total, 0);
   const showCashReceived = settings.show_cash_received !== false;
   const showPaymentStatus = settings.show_payment_status !== false;
-  const menuInfoClickAddsItem = settings.menu_info_click_adds_item === true;
+  const menuInfoClickAddsItem = settings.menu_info_click_adds_item !== false;
   const effectivePaymentStatus = showPaymentStatus ? paymentStatus : "결제 완료";
 
   const submit = async () => {
@@ -667,7 +667,7 @@ function CashierScreen({
                 >
                   {menuInfoClickAddsItem ? (
                     <button
-                      className="block w-full flex-1 text-left disabled:cursor-not-allowed"
+                      className="block w-full flex-1 rounded-md text-left active:bg-emerald-50 disabled:cursor-not-allowed"
                       disabled={soldOut}
                       onClick={() => setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }))}
                     >
@@ -1205,7 +1205,7 @@ function SettingsAdmin({
   const [qrImage, setQrImage] = useState(settings.bank_qr_note);
   const [showCashReceived, setShowCashReceived] = useState(settings.show_cash_received !== false);
   const [showPaymentStatus, setShowPaymentStatus] = useState(settings.show_payment_status !== false);
-  const [menuInfoClickAddsItem, setMenuInfoClickAddsItem] = useState(settings.menu_info_click_adds_item === true);
+  const [menuInfoClickAddsItem, setMenuInfoClickAddsItem] = useState(settings.menu_info_click_adds_item !== false);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -1329,7 +1329,7 @@ function SettingsAdmin({
         disabled={saving}
         onClick={save}
       >
-        {saving ? "저장 중" : "계좌 설정 저장"}
+        {saving ? "저장 중" : "설정 저장"}
       </button>
     </Panel>
   );
