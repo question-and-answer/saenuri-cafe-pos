@@ -21,6 +21,7 @@ create table settings (
   show_cash_received boolean not null default true,
   show_payment_status boolean not null default true,
   menu_info_click_adds_item boolean not null default true,
+  show_order_timer boolean not null default true,
   updated_at timestamptz not null default now(),
   constraint settings_one_row check (id = 'event')
 );
@@ -164,8 +165,8 @@ as $$
 declare
   v_staff staff;
 begin
-  if length(trim(coalesce(p_name, ''))) < 2 then
-    raise exception '이름을 2자 이상 입력해 주세요.';
+  if length(trim(coalesce(p_name, ''))) < 1 then
+    raise exception '이름을 입력해 주세요.';
   end if;
   if p_requested_role not in ('cashier', 'maker') then
     raise exception '주문 담당 또는 제조 담당을 선택해 주세요.';

@@ -104,6 +104,7 @@ export type Settings = {
   show_cash_received: boolean;
   show_payment_status: boolean;
   menu_info_click_adds_item: boolean;
+  show_order_timer: boolean;
   updated_at: string;
 };
 

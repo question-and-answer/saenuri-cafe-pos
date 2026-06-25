@@ -90,8 +90,16 @@ const emptySettings: Settings = {
   show_cash_received: true,
   show_payment_status: true,
   menu_info_click_adds_item: true,
+  show_order_timer: true,
   updated_at: new Date().toISOString(),
 };
+
+function formatElapsedTime(start: string, end: string | number) {
+  const elapsedSeconds = Math.max(0, Math.floor((+new Date(end) - +new Date(start)) / 1000));
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
 
 function newest<T extends { created_at: string }>(rows: T[]) {
   return [...rows].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
@@ -366,6 +374,7 @@ export default function Home() {
             staff={approved}
             orders={activeOrders}
             orderItems={orderItems}
+            settings={settings}
             setNotice={setNotice}
             log={log}
           />
@@ -515,7 +524,7 @@ function AccessScreen({
 
         <button
           className="mt-5 h-14 w-full rounded-lg bg-emerald-700 text-base font-black text-white disabled:opacity-50"
-          disabled={saving || name.trim().length < 2 || (mode === "admin" && adminCode.length < 4)}
+          disabled={saving || name.trim().length < 1 || (mode === "admin" && adminCode.length < 4)}
           onClick={submit}
         >
           {saving ? "처리 중" : mode === "admin" ? "관리자 로그인" : "승인 요청"}
@@ -776,16 +785,26 @@ function MakerScreen({
   staff,
   orders,
   orderItems,
+  settings,
   setNotice,
   log,
 }: {
   staff: Staff;
   orders: Order[];
   orderItems: OrderItem[];
+  settings: Settings;
   setNotice: (notice: Notice) => void;
   log: (action: string, targetType: string, targetId: string, beforeValue: unknown, afterValue: unknown) => Promise<void>;
 }) {
   const [collapsedOrders, setCollapsedOrders] = useState<Record<string, boolean>>({});
+  const [now, setNow] = useState(() => Date.now());
+  const showOrderTimer = settings.show_order_timer !== false;
+
+  useEffect(() => {
+    if (!showOrderTimer) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [showOrderTimer]);
 
   const toggleCollapsed = (orderId: string) => {
     setCollapsedOrders((current) => ({ ...current, [orderId]: !current[orderId] }));
@@ -815,6 +834,8 @@ function MakerScreen({
               items={orderItems.filter((item) => item.order_id === order.id)}
               disabled={staff.role === "cashier"}
               collapsed={Boolean(collapsedOrders[order.id])}
+              showTimer={showOrderTimer}
+              now={now}
               onToggleCollapsed={() => toggleCollapsed(order.id)}
               onAdvance={() => advance(order)}
             />
@@ -832,6 +853,8 @@ function KitchenTicket({
   items,
   disabled,
   collapsed,
+  showTimer,
+  now,
   onToggleCollapsed,
   onAdvance,
 }: {
@@ -839,9 +862,14 @@ function KitchenTicket({
   items: OrderItem[];
   disabled: boolean;
   collapsed: boolean;
+  showTimer: boolean;
+  now: number;
   onToggleCollapsed: () => void;
   onAdvance: () => void;
 }) {
+  const timerEnd = order.status === "제조 완료" ? order.updated_at : now;
+  const timerLabel = formatElapsedTime(order.created_at, timerEnd);
+
   if (collapsed) {
     return (
       <button
@@ -849,7 +877,10 @@ function KitchenTicket({
         onClick={onToggleCollapsed}
       >
         <span className="text-3xl font-black">#{orderNo(order.order_number)}</span>
-        <StatusBadge status={order.status} />
+        <span className="flex items-center gap-2">
+          {showTimer ? <TimerBadge elapsed={timerLabel} stopped={order.status === "제조 완료"} /> : null}
+          <StatusBadge status={order.status} />
+        </span>
       </button>
     );
   }
@@ -862,6 +893,7 @@ function KitchenTicket({
           <div className="mt-1 text-sm font-black text-stone-500">{shortTime(order.created_at)}</div>
         </div>
         <div className="flex items-center gap-2">
+          {showTimer ? <TimerBadge elapsed={timerLabel} stopped={order.status === "제조 완료"} /> : null}
           <StatusBadge status={order.status} />
           <button className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-black" onClick={onToggleCollapsed}>
             작게
@@ -967,7 +999,7 @@ function AdminScreen(props: {
       {tab === "preview" ? (
         <div className="grid gap-4">
           <CashierScreen staff={props.staff} menu={props.menu} orders={props.orders} orderItems={props.orderItems} settings={props.settings} setNotice={props.setNotice} refreshData={props.refreshData} />
-          <MakerScreen staff={props.staff} orders={props.activeOrders} orderItems={props.orderItems} setNotice={props.setNotice} log={props.log} />
+          <MakerScreen staff={props.staff} orders={props.activeOrders} orderItems={props.orderItems} settings={props.settings} setNotice={props.setNotice} log={props.log} />
         </div>
       ) : null}
     </section>
@@ -1240,6 +1272,7 @@ function SettingsAdmin({
   const [showCashReceived, setShowCashReceived] = useState(settings.show_cash_received !== false);
   const [showPaymentStatus, setShowPaymentStatus] = useState(settings.show_payment_status !== false);
   const [menuInfoClickAddsItem, setMenuInfoClickAddsItem] = useState(settings.menu_info_click_adds_item !== false);
+  const [showOrderTimer, setShowOrderTimer] = useState(settings.show_order_timer !== false);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -1251,6 +1284,7 @@ function SettingsAdmin({
       show_cash_received: showCashReceived,
       show_payment_status: showPaymentStatus,
       menu_info_click_adds_item: menuInfoClickAddsItem,
+      show_order_timer: showOrderTimer,
     };
     const { error } = await supabase.from("settings").update(after).eq("id", "event");
     setSaving(false);
@@ -1266,6 +1300,7 @@ function SettingsAdmin({
           show_cash_received: settings.show_cash_received,
           show_payment_status: settings.show_payment_status,
           menu_info_click_adds_item: settings.menu_info_click_adds_item,
+          show_order_timer: settings.show_order_timer,
         },
         {
           bank_account: bankAccount,
@@ -1273,6 +1308,7 @@ function SettingsAdmin({
           show_cash_received: showCashReceived,
           show_payment_status: showPaymentStatus,
           menu_info_click_adds_item: menuInfoClickAddsItem,
+          show_order_timer: showOrderTimer,
         },
       );
       setNotice({ kind: "ok", text: "계좌 설정이 저장되었습니다." });
@@ -1332,7 +1368,7 @@ function SettingsAdmin({
           ) : null}
         </div>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <label className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 p-4 text-sm font-black">
           <span>받은 금액/거스름돈 사용</span>
           <input
@@ -1355,6 +1391,14 @@ function SettingsAdmin({
             type="checkbox"
             checked={menuInfoClickAddsItem}
             onChange={(event) => setMenuInfoClickAddsItem(event.target.checked)}
+          />
+        </label>
+        <label className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 p-4 text-sm font-black">
+          <span>제조 화면 스톱워치 표시</span>
+          <input
+            type="checkbox"
+            checked={showOrderTimer}
+            onChange={(event) => setShowOrderTimer(event.target.checked)}
           />
         </label>
       </div>
@@ -1591,4 +1635,12 @@ function StatusBadge({ status }: { status: OrderStatus }) {
             ? "bg-rose-100 text-rose-900"
             : "bg-stone-200 text-stone-900";
   return <span className={`rounded-full px-2 py-1 text-xs font-black ${color}`}>{status}</span>;
+}
+
+function TimerBadge({ elapsed, stopped }: { elapsed: string; stopped: boolean }) {
+  return (
+    <span className={`rounded-full px-2 py-1 text-xs font-black ${stopped ? "bg-stone-200 text-stone-800" : "bg-emerald-700 text-white"}`}>
+      {elapsed}
+    </span>
+  );
 }
