@@ -47,21 +47,23 @@ type Notice = { kind: "ok" | "warn"; text: string } | null;
 
 const roleLabel: Record<StaffRole, string> = {
   admin: "관리자",
-  cashier: "계산",
-  maker: "제조",
+  cashier: "주문 담당",
+  maker: "제조 담당",
 };
 
 const nextStatus: Record<OrderStatus, OrderStatus | null> = {
-  접수: "제조",
+  접수: "제조 중",
   제조: "제조 완료",
+  "제조 중": "제조 완료",
   "제조 완료": "픽업 완료",
   "픽업 완료": null,
   취소: null,
 };
 
 const nextAction: Partial<Record<OrderStatus, string>> = {
-  접수: "제조 시작",
+  접수: "만들기 시작",
   제조: "제조 완료",
+  "제조 중": "제조 완료",
   "제조 완료": "픽업 완료",
 };
 
@@ -79,6 +81,7 @@ const actionLabel: Record<string, string> = {
   staff_approved: "직원 승인",
   staff_role_changed: "역할 변경",
   staff_revoked: "승인 해제",
+  staff_admin_login: "관리자 로그인",
   settings_updated: "설정 변경",
   backup_created: "백업 생성",
   export_created: "엑셀 내보내기",
@@ -89,6 +92,7 @@ const emptySettings: Settings = {
   event_name: "새누리교회 일일카페 POS",
   next_order_number: 1,
   low_stock_threshold: 5,
+  admin_code_hash: null,
   bank_account: "",
   bank_qr_url: "",
   last_backup_at: null,
@@ -399,7 +403,7 @@ function AccessScreen({
   hasAnyStaff: boolean;
   setNotice: (notice: Notice) => void;
 }) {
-  const [mode, setMode] = useState<"request" | "login">("request");
+  const [mode, setMode] = useState<"request" | "login" | "admin">("request");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<StaffRole>(hasAnyStaff ? "cashier" : "admin");
@@ -409,30 +413,54 @@ function AccessScreen({
     if (!supabase) return;
     setSaving(true);
     const { error } =
-      mode === "login"
-        ? await supabase.rpc("staff_login_with_password", {
+      mode === "admin"
+        ? await supabase.rpc("admin_login_with_code", {
             p_name: name,
-            p_password: password,
+            p_admin_code: password,
             p_device_session_id: getDeviceSessionId(),
           })
-        : await supabase.rpc("create_staff_request", {
-            p_name: name,
-            p_requested_role: role,
-            p_password: password,
-            p_device_session_id: getDeviceSessionId(),
-          });
+        : mode === "login"
+          ? await supabase.rpc("staff_login_with_password", {
+              p_name: name,
+              p_password: password,
+              p_device_session_id: getDeviceSessionId(),
+            })
+          : await supabase.rpc("create_staff_request", {
+              p_name: name,
+              p_requested_role: role,
+              p_password: password,
+              p_device_session_id: getDeviceSessionId(),
+            });
     setSaving(false);
     if (error) setNotice({ kind: "warn", text: error.message });
     else
       setNotice({
         kind: "ok",
         text:
-          mode === "login"
+          mode === "admin"
+            ? "관리자로 로그인되었습니다."
+            : mode === "login"
             ? "로그인되었습니다."
             : hasAnyStaff
               ? "승인 요청을 보냈습니다."
               : "첫 관리자로 시작합니다.",
       });
+  };
+
+  const adminLoginFromWaiting = async () => {
+    if (!supabase || !currentStaff) return;
+    setSaving(true);
+    const { error } = await supabase.rpc("admin_login_with_code", {
+      p_name: currentStaff.name,
+      p_admin_code: password,
+      p_device_session_id: getDeviceSessionId(),
+    });
+    setSaving(false);
+    setNotice(
+      error
+        ? { kind: "warn", text: error.message }
+        : { kind: "ok", text: "관리자로 로그인되었습니다." },
+    );
   };
 
   if (currentStaff?.approval_status === "pending") {
@@ -444,6 +472,23 @@ function AccessScreen({
           <p className="mt-2 text-sm text-stone-600">
             {currentStaff.name}님의 {roleLabel[currentStaff.requested_role]} 권한 요청이 접수되었습니다.
           </p>
+          <div className="mt-5 rounded-lg bg-stone-50 p-3 text-left">
+            <label className="block text-sm font-bold">관리자 코드</label>
+            <input
+              className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="관리자 코드"
+            />
+            <button
+              className="mt-3 h-12 w-full rounded-lg bg-stone-950 font-black text-white disabled:opacity-50"
+              disabled={saving || password.length < 4}
+              onClick={adminLoginFromWaiting}
+            >
+              관리자 로그인
+            </button>
+          </div>
         </section>
       </main>
     );
@@ -463,7 +508,7 @@ function AccessScreen({
           </p>
         ) : null}
         {hasAnyStaff ? (
-          <div className="mt-5 grid grid-cols-2 rounded-lg bg-stone-100 p-1">
+          <div className="mt-5 grid grid-cols-3 rounded-lg bg-stone-100 p-1">
             <button
               className={`h-11 rounded-md text-sm font-black ${mode === "request" ? "bg-white shadow-sm" : ""}`}
               onClick={() => setMode("request")}
@@ -476,6 +521,12 @@ function AccessScreen({
             >
               기존 로그인
             </button>
+            <button
+              className={`h-11 rounded-md text-sm font-black ${mode === "admin" ? "bg-white shadow-sm" : ""}`}
+              onClick={() => setMode("admin")}
+            >
+              관리자 로그인
+            </button>
           </div>
         ) : null}
         <label className="mt-5 block text-sm font-bold">이름</label>
@@ -485,13 +536,15 @@ function AccessScreen({
           onChange={(event) => setName(event.target.value)}
           placeholder="예: 김새누리"
         />
-        <label className="mt-4 block text-sm font-bold">비밀번호</label>
+        <label className="mt-4 block text-sm font-bold">
+          {mode === "admin" ? "관리자 코드" : "비밀번호"}
+        </label>
         <input
           className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          placeholder="4자 이상"
+          placeholder={mode === "admin" ? "관리자 코드" : "4자 이상"}
         />
         {mode === "request" ? (
           <>
@@ -501,9 +554,9 @@ function AccessScreen({
               value={role}
               onChange={(event) => setRole(event.target.value as StaffRole)}
             >
+              <option value="cashier">주문 담당</option>
+              <option value="maker">제조 담당</option>
               <option value="admin">관리자</option>
-              <option value="cashier">계산</option>
-              <option value="maker">제조</option>
             </select>
           </>
         ) : null}
@@ -512,7 +565,7 @@ function AccessScreen({
           disabled={saving || name.trim().length < 2 || password.length < 4}
           onClick={submit}
         >
-          {saving ? "처리 중" : mode === "login" ? "로그인" : "승인 요청"}
+          {saving ? "처리 중" : mode === "admin" ? "관리자 로그인" : mode === "login" ? "로그인" : "승인 요청"}
         </button>
       </section>
     </main>
@@ -1232,8 +1285,8 @@ function StaffAdmin({
                 onChange={(event) => update(person, { role: event.target.value as StaffRole }, "staff_role_changed")}
               >
                 <option value="admin">관리자</option>
-                <option value="cashier">계산</option>
-                <option value="maker">제조</option>
+                <option value="cashier">주문 담당</option>
+                <option value="maker">제조 담당</option>
               </select>
               <button className="h-11 rounded-lg bg-stone-200 font-black" onClick={() => update(person, { approval_status: "revoked", revoked_at: new Date().toISOString() }, "staff_revoked")}>
                 해제
@@ -1506,7 +1559,7 @@ function StatusBadge({ status }: { status: OrderStatus }) {
   const color =
     status === "접수"
       ? "bg-sky-100 text-sky-900"
-      : status === "제조"
+      : status === "제조" || status === "제조 중"
         ? "bg-orange-100 text-orange-900"
         : status === "제조 완료"
           ? "bg-emerald-100 text-emerald-900"

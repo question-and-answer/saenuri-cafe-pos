@@ -1,6 +1,6 @@
 export type StaffRole = "admin" | "cashier" | "maker";
 export type ApprovalStatus = "pending" | "approved" | "revoked";
-export type OrderStatus = "접수" | "제조" | "제조 완료" | "픽업 완료" | "취소";
+export type OrderStatus = "접수" | "제조" | "제조 중" | "제조 완료" | "픽업 완료" | "취소";
 export type PaymentMethod = "현금" | "계좌이체";
 export type PaymentStatus = "결제 완료" | "미결제";
 
@@ -91,6 +91,7 @@ export type Settings = {
   event_name: string;
   next_order_number: number;
   low_stock_threshold: number;
+  admin_code_hash?: string | null;
   bank_account: string;
   bank_qr_url: string;
   last_backup_at: string | null;

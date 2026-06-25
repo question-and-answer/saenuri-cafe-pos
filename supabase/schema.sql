@@ -11,9 +11,11 @@ exception when duplicate_object then null;
 end $$;
 
 do $$ begin
-  create type order_status as enum ('접수', '제조', '제조 완료', '픽업 완료', '취소');
+  create type order_status as enum ('접수', '제조', '제조 중', '제조 완료', '픽업 완료', '취소');
 exception when duplicate_object then null;
 end $$;
+
+alter type order_status add value if not exists '제조 중';
 
 do $$ begin
   create type payment_method as enum ('현금', '계좌이체');
@@ -47,6 +49,7 @@ create table if not exists settings (
   event_name text not null default '새누리교회 일일카페 POS',
   next_order_number integer not null default 1,
   low_stock_threshold integer not null default 5,
+  admin_code_hash text,
   bank_account text not null default '',
   bank_qr_url text not null default '',
   last_backup_at timestamptz,
@@ -54,6 +57,8 @@ create table if not exists settings (
   updated_at timestamptz not null default now(),
   constraint settings_singleton check (id = 'event')
 );
+
+alter table settings add column if not exists admin_code_hash text;
 
 create table if not exists menu_items (
   id uuid primary key default gen_random_uuid(),
@@ -153,6 +158,10 @@ alter table activity_logs replica identity full;
 alter table backups replica identity full;
 
 insert into settings (id) values ('event') on conflict (id) do nothing;
+
+update settings
+set admin_code_hash = crypt('1234', gen_salt('bf'))
+where id = 'event' and admin_code_hash is null;
 
 insert into menu_items (name, price, stock_quantity, stock_unknown)
 select seed.name, seed.price, null, true
@@ -287,6 +296,80 @@ begin
     v_staff.name,
     v_staff.role,
     'staff_login',
+    'staff',
+    v_staff.id::text,
+    jsonb_build_object('device_session_id', p_device_session_id)
+  );
+
+  return v_staff;
+end;
+$$;
+
+create or replace function admin_login_with_code(
+  p_name text,
+  p_admin_code text,
+  p_device_session_id text
+)
+returns staff
+language plpgsql
+security definer
+as $$
+declare
+  v_settings settings;
+  v_staff staff;
+begin
+  select * into v_settings from settings where id = 'event';
+
+  if not found or v_settings.admin_code_hash is null then
+    raise exception '관리자 코드가 설정되지 않았습니다.';
+  end if;
+
+  if v_settings.admin_code_hash <> crypt(p_admin_code, v_settings.admin_code_hash) then
+    raise exception '관리자 코드가 맞지 않습니다.';
+  end if;
+
+  select * into v_staff
+  from staff
+  where device_session_id = p_device_session_id
+  limit 1;
+
+  if found then
+    update staff
+    set name = nullif(trim(p_name), ''),
+        requested_role = 'admin',
+        role = 'admin',
+        approval_status = 'approved',
+        approved_at = coalesce(approved_at, now()),
+        revoked_at = null,
+        updated_at = now()
+    where id = v_staff.id
+    returning * into v_staff;
+  else
+    insert into staff (
+      name,
+      requested_role,
+      role,
+      approval_status,
+      device_session_id,
+      approved_at
+    )
+    values (
+      nullif(trim(p_name), ''),
+      'admin',
+      'admin',
+      'approved',
+      p_device_session_id,
+      now()
+    )
+    returning * into v_staff;
+  end if;
+
+  insert into activity_logs (staff_id, staff_name, staff_role, action_type, target_type, target_id, after_value)
+  values (
+    v_staff.id,
+    v_staff.name,
+    v_staff.role,
+    'staff_admin_login',
     'staff',
     v_staff.id::text,
     jsonb_build_object('device_session_id', p_device_session_id)
