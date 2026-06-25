@@ -520,7 +520,7 @@ function CashierScreen({
     <section className="grid gap-4 xl:grid-cols-[1fr_360px]">
       <div className="space-y-4">
         <Panel title="메뉴" icon={<Coffee size={20} />}>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-3">
             {availableMenu.map((item) => {
               const soldOut = item.is_sold_out || (!item.stock_unknown && item.stock_quantity === 0);
               return (
@@ -773,7 +773,7 @@ function AdminScreen(props: {
       {tab === "history" ? <HistoryAdmin logs={props.logs} /> : null}
       {tab === "export" ? <ExportAdmin {...props} /> : null}
       {tab === "preview" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-4">
           <CashierScreen staff={props.staff} menu={props.menu} orders={props.orders} orderItems={props.orderItems} settings={props.settings} setNotice={props.setNotice} />
           <MakerScreen staff={props.staff} orders={props.activeOrders} orderItems={props.orderItems} setNotice={props.setNotice} log={props.log} />
         </div>
