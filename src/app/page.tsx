@@ -646,21 +646,46 @@ function CashierScreen({
           <div className="grid grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-3">
             {availableMenu.map((item) => {
               const soldOut = item.is_sold_out || (!item.stock_unknown && item.stock_quantity === 0);
+              const quantity = cart[item.id] ?? 0;
               return (
-                <button
+                <div
                   key={item.id}
-                  disabled={soldOut}
-                  className={`min-h-28 rounded-lg border p-3 text-left ${
+                  className={`min-h-36 rounded-lg border p-3 ${
                     soldOut ? "border-stone-200 bg-stone-100 text-stone-400" : "border-stone-300 bg-white shadow-sm"
                   }`}
-                  onClick={() => setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }))}
                 >
-                  <div className="text-lg font-black">{item.name}</div>
-                  <div className="mt-1 text-sm font-black text-emerald-700">{won(item.price)}</div>
-                  <div className="mt-3 text-xs font-black">
-                    {soldOut ? "품절" : item.stock_unknown ? "재고 미설정" : `재고 ${item.stock_quantity}`}
+                  <button
+                    disabled={soldOut}
+                    className="block w-full text-left disabled:cursor-not-allowed"
+                    onClick={() => setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }))}
+                  >
+                    <div className="text-lg font-black">{item.name}</div>
+                    <div className="mt-1 text-sm font-black text-emerald-700">{won(item.price)}</div>
+                    <div className="mt-2 text-xs font-black">
+                      {soldOut ? "품절" : item.stock_unknown ? "재고 미설정" : `재고 ${item.stock_quantity}`}
+                    </div>
+                  </button>
+                  <div className="mt-3 grid grid-cols-[44px_1fr_44px] items-center gap-2">
+                    <QtyButton
+                      onClick={() =>
+                        setCart((current) => ({ ...current, [item.id]: Math.max((current[item.id] ?? 0) - 1, 0) }))
+                      }
+                    >
+                      -
+                    </QtyButton>
+                    <div className={`grid h-11 place-items-center rounded-lg text-xl font-black ${quantity ? "bg-emerald-50 text-emerald-800" : "bg-stone-50 text-stone-400"}`}>
+                      {quantity}
+                    </div>
+                    <QtyButton
+                      disabled={soldOut}
+                      onClick={() => {
+                        if (!soldOut) setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }));
+                      }}
+                    >
+                      +
+                    </QtyButton>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -1443,8 +1468,24 @@ function Segmented({ value, options, onChange }: { value: string; options: strin
   );
 }
 
-function QtyButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return <button className="h-10 w-10 rounded-lg bg-stone-950 text-xl font-black text-white" onClick={onClick}>{children}</button>;
+function QtyButton({
+  onClick,
+  children,
+  disabled = false,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      className="h-10 w-10 rounded-lg bg-stone-950 text-xl font-black text-white disabled:bg-stone-300"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
 }
 
 function Metric({ label, value, warning = false }: { label: string; value: string; warning?: boolean }) {
