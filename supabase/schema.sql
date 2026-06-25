@@ -260,6 +260,17 @@ begin
   v_order_number := v_settings.next_order_number;
   update settings set next_order_number = next_order_number + 1 where id = 'event';
 
+  -- Create the parent order first so order_items and inventory_logs can safely
+  -- reference it while the same database transaction builds the ticket.
+  insert into orders (
+    id, order_number, status, payment_status, payment_method, total_amount,
+    received_amount, change_amount, created_by_staff_id
+  )
+  values (
+    v_order_id, v_order_number, '접수', p_payment_status, p_payment_method, 0,
+    p_received_amount, 0, p_staff_id
+  );
+
   for v_item in select * from jsonb_array_elements(p_items)
   loop
     v_qty := (v_item->>'quantity')::integer;
@@ -293,14 +304,10 @@ begin
     values (v_order_id, v_menu.id, v_menu.name, v_menu.price, v_qty, v_subtotal);
   end loop;
 
-  insert into orders (
-    id, order_number, status, payment_status, payment_method, total_amount,
-    received_amount, change_amount, created_by_staff_id
-  )
-  values (
-    v_order_id, v_order_number, '접수', p_payment_status, p_payment_method, v_total,
-    p_received_amount, greatest(coalesce(p_received_amount, v_total) - v_total, 0), p_staff_id
-  );
+  update orders
+  set total_amount = v_total,
+      change_amount = greatest(coalesce(p_received_amount, v_total) - v_total, 0)
+  where id = v_order_id;
 
   insert into payments (order_id, payment_method, payment_status, amount, received_amount, change_amount)
   values (v_order_id, p_payment_method, p_payment_status, v_total, p_received_amount, greatest(coalesce(p_received_amount, v_total) - v_total, 0));
