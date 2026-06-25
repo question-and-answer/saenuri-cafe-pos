@@ -89,6 +89,7 @@ const emptySettings: Settings = {
   bank_qr_note: "",
   show_cash_received: true,
   show_payment_status: true,
+  menu_info_click_adds_item: false,
   updated_at: new Date().toISOString(),
 };
 
@@ -531,6 +532,7 @@ function CashierScreen({
   const change = Math.max(Number(received || 0) - total, 0);
   const showCashReceived = settings.show_cash_received !== false;
   const showPaymentStatus = settings.show_payment_status !== false;
+  const menuInfoClickAddsItem = settings.menu_info_click_adds_item === true;
   const effectivePaymentStatus = showPaymentStatus ? paymentStatus : "결제 완료";
 
   const submit = async () => {
@@ -647,6 +649,15 @@ function CashierScreen({
             {availableMenu.map((item) => {
               const soldOut = item.is_sold_out || (!item.stock_unknown && item.stock_quantity === 0);
               const quantity = cart[item.id] ?? 0;
+              const itemInfo = (
+                <>
+                  <div className="text-lg font-black">{item.name}</div>
+                  <div className="mt-1 text-sm font-black text-emerald-700">{won(item.price)}</div>
+                  <div className="mt-3 text-xs font-black">
+                    {soldOut ? "품절" : item.stock_unknown ? "재고 미설정" : `재고 ${item.stock_quantity}`}
+                  </div>
+                </>
+              );
               return (
                 <div
                   key={item.id}
@@ -654,13 +665,17 @@ function CashierScreen({
                     soldOut ? "border-stone-200 bg-stone-100 text-stone-400" : "border-stone-300 bg-white shadow-sm"
                   }`}
                 >
-                  <div className="text-left">
-                    <div className="text-lg font-black">{item.name}</div>
-                    <div className="mt-1 text-sm font-black text-emerald-700">{won(item.price)}</div>
-                    <div className="mt-3 text-xs font-black">
-                      {soldOut ? "품절" : item.stock_unknown ? "재고 미설정" : `재고 ${item.stock_quantity}`}
-                    </div>
-                  </div>
+                  {menuInfoClickAddsItem ? (
+                    <button
+                      className="block w-full flex-1 text-left disabled:cursor-not-allowed"
+                      disabled={soldOut}
+                      onClick={() => setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }))}
+                    >
+                      {itemInfo}
+                    </button>
+                  ) : (
+                    <div className="text-left">{itemInfo}</div>
+                  )}
                   <div className="mt-2 grid grid-cols-[40px_1fr_40px] items-center gap-1">
                     <MenuQtyButton
                       disabled={quantity === 0}
@@ -1190,6 +1205,7 @@ function SettingsAdmin({
   const [qrImage, setQrImage] = useState(settings.bank_qr_note);
   const [showCashReceived, setShowCashReceived] = useState(settings.show_cash_received !== false);
   const [showPaymentStatus, setShowPaymentStatus] = useState(settings.show_payment_status !== false);
+  const [menuInfoClickAddsItem, setMenuInfoClickAddsItem] = useState(settings.menu_info_click_adds_item === true);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -1200,6 +1216,7 @@ function SettingsAdmin({
       bank_qr_note: qrImage,
       show_cash_received: showCashReceived,
       show_payment_status: showPaymentStatus,
+      menu_info_click_adds_item: menuInfoClickAddsItem,
     };
     const { error } = await supabase.from("settings").update(after).eq("id", "event");
     setSaving(false);
@@ -1214,12 +1231,14 @@ function SettingsAdmin({
           bank_qr_note: settings.bank_qr_note ? "QR 등록됨" : "",
           show_cash_received: settings.show_cash_received,
           show_payment_status: settings.show_payment_status,
+          menu_info_click_adds_item: settings.menu_info_click_adds_item,
         },
         {
           bank_account: bankAccount,
           bank_qr_note: qrImage ? "QR 등록됨" : "",
           show_cash_received: showCashReceived,
           show_payment_status: showPaymentStatus,
+          menu_info_click_adds_item: menuInfoClickAddsItem,
         },
       );
       setNotice({ kind: "ok", text: "계좌 설정이 저장되었습니다." });
@@ -1279,7 +1298,7 @@ function SettingsAdmin({
           ) : null}
         </div>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <label className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 p-4 text-sm font-black">
           <span>받은 금액/거스름돈 사용</span>
           <input
@@ -1294,6 +1313,14 @@ function SettingsAdmin({
             type="checkbox"
             checked={showPaymentStatus}
             onChange={(event) => setShowPaymentStatus(event.target.checked)}
+          />
+        </label>
+        <label className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 p-4 text-sm font-black">
+          <span>메뉴 이름/가격 터치로 수량 추가</span>
+          <input
+            type="checkbox"
+            checked={menuInfoClickAddsItem}
+            onChange={(event) => setMenuInfoClickAddsItem(event.target.checked)}
           />
         </label>
       </div>

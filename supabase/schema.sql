@@ -20,6 +20,7 @@ create table settings (
   bank_qr_note text not null default '',
   show_cash_received boolean not null default true,
   show_payment_status boolean not null default true,
+  menu_info_click_adds_item boolean not null default false,
   updated_at timestamptz not null default now(),
   constraint settings_one_row check (id = 'event')
 );
