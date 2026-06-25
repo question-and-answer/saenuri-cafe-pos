@@ -38,8 +38,6 @@ import type {
 } from "@/lib/types";
 
 type View = "cashier" | "maker" | "admin";
-type MakerLayout = "auto" | "portrait" | "landscape";
-type MakerDensity = "normal" | "compact";
 type Notice = { kind: "ok" | "warn"; text: string } | null;
 
 const roleLabel: Record<StaffRole, string> = {
@@ -723,38 +721,11 @@ function MakerScreen({
   setNotice: (notice: Notice) => void;
   log: (action: string, targetType: string, targetId: string, beforeValue: unknown, afterValue: unknown) => Promise<void>;
 }) {
-  const [layout, setLayout] = useState<MakerLayout>("auto");
-  const [density, setDensity] = useState<MakerDensity>("normal");
+  const [collapsedOrders, setCollapsedOrders] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      const savedLayout = localStorage.getItem("maker-layout");
-      const savedDensity = localStorage.getItem("maker-density");
-      if (savedLayout === "auto" || savedLayout === "portrait" || savedLayout === "landscape") {
-        setLayout(savedLayout);
-      }
-      if (savedDensity === "normal" || savedDensity === "compact") {
-        setDensity(savedDensity);
-      }
-    });
-  }, []);
-
-  const setMakerLayout = (value: MakerLayout) => {
-    setLayout(value);
-    localStorage.setItem("maker-layout", value);
+  const toggleCollapsed = (orderId: string) => {
+    setCollapsedOrders((current) => ({ ...current, [orderId]: !current[orderId] }));
   };
-
-  const setMakerDensity = (value: MakerDensity) => {
-    setDensity(value);
-    localStorage.setItem("maker-density", value);
-  };
-
-  const gridClass =
-    layout === "portrait"
-      ? "grid-cols-1"
-      : layout === "landscape"
-        ? "grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
-        : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3";
 
   const advance = async (order: Order) => {
     if (!supabase) return;
@@ -771,39 +742,7 @@ function MakerScreen({
 
   return (
     <Panel title="제조 화면" icon={<Ticket size={20} />}>
-      <div className="mb-4 grid gap-2 rounded-lg bg-stone-50 p-2 sm:grid-cols-[1fr_auto]">
-        <div className="grid grid-cols-3 gap-1 rounded-lg bg-white p-1">
-          {[
-            ["auto", "자동"],
-            ["portrait", "세로"],
-            ["landscape", "가로"],
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              className={`h-10 rounded-md text-sm font-black ${layout === value ? "bg-stone-950 text-white" : "bg-stone-50"}`}
-              onClick={() => setMakerLayout(value as MakerLayout)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-white p-1">
-          {[
-            ["normal", "기본"],
-            ["compact", "작게"],
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              className={`h-10 rounded-md px-3 text-sm font-black ${density === value ? "bg-emerald-700 text-white" : "bg-stone-50"}`}
-              onClick={() => setMakerDensity(value as MakerDensity)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className={`grid min-w-0 gap-3 ${gridClass}`}>
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {orders.length ? (
           orders.map((order) => (
             <KitchenTicket
@@ -811,7 +750,8 @@ function MakerScreen({
               order={order}
               items={orderItems.filter((item) => item.order_id === order.id)}
               disabled={staff.role === "cashier"}
-              compact={density === "compact"}
+              collapsed={Boolean(collapsedOrders[order.id])}
+              onToggleCollapsed={() => toggleCollapsed(order.id)}
               onAdvance={() => advance(order)}
             />
           ))
@@ -827,37 +767,56 @@ function KitchenTicket({
   order,
   items,
   disabled,
-  compact,
+  collapsed,
+  onToggleCollapsed,
   onAdvance,
 }: {
   order: Order;
   items: OrderItem[];
   disabled: boolean;
-  compact: boolean;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onAdvance: () => void;
 }) {
+  if (collapsed) {
+    return (
+      <button
+        className="flex min-h-24 items-center justify-between gap-3 rounded-lg border-2 border-stone-950 bg-white p-4 text-left shadow-sm"
+        onClick={onToggleCollapsed}
+      >
+        <span className="text-3xl font-black">#{orderNo(order.order_number)}</span>
+        <StatusBadge status={order.status} />
+      </button>
+    );
+  }
+
   return (
-    <article className={`rounded-lg border-2 border-stone-950 bg-white ${compact ? "p-3" : "p-4"}`}>
+    <article className="rounded-lg border-2 border-stone-950 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className={`${compact ? "text-2xl" : "text-3xl"} font-black`}>#{orderNo(order.order_number)}</div>
-          <div className={`${compact ? "mt-0 text-xs" : "mt-1 text-sm"} font-black text-stone-500`}>{shortTime(order.created_at)}</div>
+          <div className="text-3xl font-black">#{orderNo(order.order_number)}</div>
+          <div className="mt-1 text-sm font-black text-stone-500">{shortTime(order.created_at)}</div>
         </div>
-        <StatusBadge status={order.status} />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={order.status} />
+          <button className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-black" onClick={onToggleCollapsed}>
+            작게
+          </button>
+        </div>
       </div>
       {order.payment_status === "미결제" ? (
-        <div className={`${compact ? "mt-2 p-2 text-xs" : "mt-3 p-3 text-sm"} rounded-lg bg-amber-100 font-black text-amber-900`}>미결제</div>
+        <div className="mt-3 rounded-lg bg-amber-100 p-3 text-sm font-black text-amber-900">미결제</div>
       ) : null}
-      <div className={`${compact ? "my-3 space-y-1" : "my-4 space-y-2"}`}>
+      <div className="my-4 space-y-2">
         {items.map((item) => (
-          <div key={item.id} className={`flex justify-between gap-2 font-black ${compact ? "text-base" : "text-xl"}`}>
+          <div key={item.id} className="flex justify-between gap-2 text-xl font-black">
             <span>{item.item_name_snapshot}</span>
             <span>x {item.quantity}</span>
           </div>
         ))}
       </div>
       {nextAction[order.status] ? (
-        <button className={`${compact ? "h-11 text-base" : "h-14 text-lg"} w-full rounded-lg bg-stone-950 font-black text-white disabled:bg-stone-300`} disabled={disabled} onClick={onAdvance}>
+        <button className="h-14 w-full rounded-lg bg-stone-950 text-lg font-black text-white disabled:bg-stone-300" disabled={disabled} onClick={onAdvance}>
           {nextAction[order.status]}
         </button>
       ) : null}
