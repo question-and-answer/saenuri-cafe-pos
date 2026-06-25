@@ -606,9 +606,9 @@ function CashierScreen({
                 "QR 코드 자리"
               )}
             </div>
-            <button className="mt-3 h-12 w-full rounded-lg bg-emerald-700 font-black text-white" onClick={() => setPaymentStatus("결제 완료")}>
-              계좌이체 완료
-            </button>
+            <p className="mt-3 rounded-lg bg-white p-3 text-sm font-bold text-stone-600">
+              송금 완료 화면을 확인한 뒤 아래 결제 상태를 선택하세요.
+            </p>
           </div>
         )}
 
