@@ -202,6 +202,12 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [approved]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
   const log = async (
     action: string,
     targetType: string,
@@ -263,14 +269,13 @@ export default function Home() {
       </header>
 
       {notice ? (
-        <button
-          className={`fixed left-4 right-4 top-20 z-40 rounded-lg px-4 py-3 text-left text-sm font-black shadow-lg ${
+        <div
+          className={`pointer-events-none fixed bottom-4 left-4 right-4 z-40 mx-auto max-w-md rounded-lg px-4 py-3 text-center text-sm font-black shadow-lg ${
             notice.kind === "ok" ? "bg-emerald-700 text-white" : "bg-amber-300 text-stone-950"
           }`}
-          onClick={() => setNotice(null)}
         >
           {notice.text}
-        </button>
+        </div>
       ) : null}
 
       <div className="mx-auto grid max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[220px_1fr]">
