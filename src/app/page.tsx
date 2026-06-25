@@ -8,6 +8,8 @@ import {
   History,
   ImagePlus,
   LogOut,
+  Maximize2,
+  Minimize2,
   Package,
   ShieldCheck,
   Ticket,
@@ -85,6 +87,8 @@ const emptySettings: Settings = {
   default_low_stock_threshold: 5,
   bank_account: "",
   bank_qr_note: "",
+  show_cash_received: true,
+  show_payment_status: true,
   updated_at: new Date().toISOString(),
 };
 
@@ -106,6 +110,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<Notice>(null);
   const [view, setView] = useState<View>("cashier");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const me = useMemo(
     () => staff.find((person) => person.device_token === deviceToken) ?? null,
@@ -211,6 +216,24 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      setNotice({ kind: "warn", text: "이 브라우저에서는 전체화면을 사용할 수 없습니다." });
+    }
+  };
+
   const log = async (
     action: string,
     targetType: string,
@@ -257,6 +280,13 @@ export default function Home() {
             <span className="rounded-lg bg-white px-3 py-2 text-xs font-black shadow-sm">
               {approved.name} · {roleLabel[approved.role!]}
             </span>
+            <button
+              className="grid h-10 w-10 place-items-center rounded-lg border border-stone-200 bg-white"
+              title={isFullscreen ? "전체화면 종료" : "전체화면"}
+              onClick={toggleFullscreen}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
             <button
               className="grid h-10 w-10 place-items-center rounded-lg border border-stone-200 bg-white"
               title="로그아웃"
@@ -499,6 +529,9 @@ function CashierScreen({
     .filter((line): line is { item: MenuItem; quantity: number } => Boolean(line.item) && line.quantity > 0);
   const total = lines.reduce((sum, line) => sum + line.item.price * line.quantity, 0);
   const change = Math.max(Number(received || 0) - total, 0);
+  const showCashReceived = settings.show_cash_received !== false;
+  const showPaymentStatus = settings.show_payment_status !== false;
+  const effectivePaymentStatus = showPaymentStatus ? paymentStatus : "결제 완료";
 
   const submit = async () => {
     if (!supabase || saving || !lines.length) return;
@@ -507,8 +540,8 @@ function CashierScreen({
       p_staff_id: staff.id,
       p_items: lines.map((line) => ({ menuItemId: line.item.id, quantity: line.quantity })),
       p_payment_method: method,
-      p_payment_status: paymentStatus,
-      p_received_amount: method === "현금" ? Number(received || total) : null,
+      p_payment_status: effectivePaymentStatus,
+      p_received_amount: method === "현금" && showCashReceived ? Number(received || total) : null,
     });
     setSaving(false);
     if (error) {
@@ -551,7 +584,7 @@ function CashierScreen({
 
       <Segmented value={method} options={["현금", "계좌이체"]} onChange={(value) => setMethod(value as PaymentMethod)} />
 
-      {method === "현금" ? (
+      {method === "현금" && showCashReceived ? (
         <div>
           <label className="text-sm font-black">받은 금액</label>
           <input
@@ -565,7 +598,9 @@ function CashierScreen({
             거스름돈 {won(change)}
           </div>
         </div>
-      ) : (
+      ) : null}
+
+      {method === "계좌이체" ? (
         <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-4">
           <div className="font-black">계좌이체</div>
           <p className="mt-1 whitespace-pre-line text-sm text-stone-700">
@@ -583,11 +618,15 @@ function CashierScreen({
             송금 완료 화면을 확인한 뒤 아래 결제 상태를 선택하세요.
           </p>
         </div>
-      )}
+      ) : null}
 
-      <Segmented value={paymentStatus} options={["결제 완료", "미결제"]} onChange={(value) => setPaymentStatus(value as PaymentStatus)} />
-      {paymentStatus === "미결제" ? (
-        <p className="rounded-lg bg-amber-100 p-3 text-sm font-black text-amber-900">미결제 주문입니다. 주문표에 경고가 표시됩니다.</p>
+      {showPaymentStatus ? (
+        <>
+          <Segmented value={paymentStatus} options={["결제 완료", "미결제"]} onChange={(value) => setPaymentStatus(value as PaymentStatus)} />
+          {paymentStatus === "미결제" ? (
+            <p className="rounded-lg bg-amber-100 p-3 text-sm font-black text-amber-900">미결제 주문입니다. 주문표에 경고가 표시됩니다.</p>
+          ) : null}
+        </>
       ) : null}
 
       <button
@@ -1096,12 +1135,19 @@ function SettingsAdmin({
 }) {
   const [bankAccount, setBankAccount] = useState(settings.bank_account);
   const [qrImage, setQrImage] = useState(settings.bank_qr_note);
+  const [showCashReceived, setShowCashReceived] = useState(settings.show_cash_received !== false);
+  const [showPaymentStatus, setShowPaymentStatus] = useState(settings.show_payment_status !== false);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     if (!supabase) return;
     setSaving(true);
-    const after = { bank_account: bankAccount, bank_qr_note: qrImage };
+    const after = {
+      bank_account: bankAccount,
+      bank_qr_note: qrImage,
+      show_cash_received: showCashReceived,
+      show_payment_status: showPaymentStatus,
+    };
     const { error } = await supabase.from("settings").update(after).eq("id", "event");
     setSaving(false);
     if (error) setNotice({ kind: "warn", text: error.message });
@@ -1110,8 +1156,18 @@ function SettingsAdmin({
         "settings_changed",
         "settings",
         "event",
-        { bank_account: settings.bank_account, bank_qr_note: settings.bank_qr_note ? "QR 등록됨" : "" },
-        { bank_account: bankAccount, bank_qr_note: qrImage ? "QR 등록됨" : "" },
+        {
+          bank_account: settings.bank_account,
+          bank_qr_note: settings.bank_qr_note ? "QR 등록됨" : "",
+          show_cash_received: settings.show_cash_received,
+          show_payment_status: settings.show_payment_status,
+        },
+        {
+          bank_account: bankAccount,
+          bank_qr_note: qrImage ? "QR 등록됨" : "",
+          show_cash_received: showCashReceived,
+          show_payment_status: showPaymentStatus,
+        },
       );
       setNotice({ kind: "ok", text: "계좌 설정이 저장되었습니다." });
     }
@@ -1169,6 +1225,24 @@ function SettingsAdmin({
             </button>
           ) : null}
         </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 p-4 text-sm font-black">
+          <span>받은 금액/거스름돈 사용</span>
+          <input
+            type="checkbox"
+            checked={showCashReceived}
+            onChange={(event) => setShowCashReceived(event.target.checked)}
+          />
+        </label>
+        <label className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 p-4 text-sm font-black">
+          <span>결제 완료/미결제 선택 사용</span>
+          <input
+            type="checkbox"
+            checked={showPaymentStatus}
+            onChange={(event) => setShowPaymentStatus(event.target.checked)}
+          />
+        </label>
       </div>
       <button
         className="mt-4 h-12 w-full rounded-lg bg-emerald-700 font-black text-white disabled:opacity-50"

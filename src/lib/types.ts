@@ -101,6 +101,8 @@ export type Settings = {
   default_low_stock_threshold: number;
   bank_account: string;
   bank_qr_note: string;
+  show_cash_received: boolean;
+  show_payment_status: boolean;
   updated_at: string;
 };
 

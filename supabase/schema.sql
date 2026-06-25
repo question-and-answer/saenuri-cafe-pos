@@ -18,6 +18,8 @@ create table settings (
   default_low_stock_threshold integer not null default 5,
   bank_account text not null default '',
   bank_qr_note text not null default '',
+  show_cash_received boolean not null default true,
+  show_payment_status boolean not null default true,
   updated_at timestamptz not null default now(),
   constraint settings_one_row check (id = 'event')
 );
