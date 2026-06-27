@@ -15,6 +15,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "새누리교회 일일카페 POS",
   description: "새누리교회 일일카페를 위한 모바일 우선 실시간 POS",
+  applicationName: "새누리카페 POS",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "새누리카페 POS",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export default function RootLayout({

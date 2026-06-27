@@ -353,8 +353,8 @@ export default function Home() {
   const activeView: View = approved.role !== "admin" && view === "admin" ? "cashier" : (view ?? defaultView);
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f7f7f4] pb-24 text-stone-950">
-      <header className="sticky top-0 z-20 border-b border-stone-200 bg-[#f7f7f4]/95 px-4 py-3 backdrop-blur">
+    <main className="min-h-dvh overflow-x-hidden bg-[#f7f7f4] pb-20 text-stone-950 lg:pb-6">
+      <header className="sticky top-0 z-20 border-b border-stone-200 bg-[#f7f7f4]/95 px-4 py-2 backdrop-blur sm:py-3">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div>
             <p className="text-xs font-black text-emerald-700">새누리교회</p>
@@ -365,7 +365,7 @@ export default function Home() {
               {approved.name} · {roleLabel[approved.role!]}
             </span>
             <button
-              className="grid h-10 w-10 place-items-center rounded-lg border border-stone-200 bg-white"
+              className="hidden h-10 w-10 place-items-center rounded-lg border border-stone-200 bg-white lg:grid"
               title={isFullscreen ? "전체화면 종료" : "전체화면"}
               onClick={toggleFullscreen}
             >
@@ -401,7 +401,7 @@ export default function Home() {
         </div>
       ) : null}
 
-      <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-4 px-4 py-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-3 px-3 py-3 sm:px-4 lg:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]">
         <nav className="grid min-w-0 grid-cols-3 gap-2 lg:block lg:space-y-2">
           <NavButton active={activeView === "cashier"} onClick={() => setView("cashier")}>
             주문하기
@@ -761,7 +761,7 @@ function CashierScreen({
   );
 
   return (
-    <section className="relative grid gap-4 md:grid-cols-[1fr_360px]">
+    <section className="relative grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-4">
         <Panel title="메뉴" icon={<Coffee size={20} />}>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(138px,1fr))] gap-3">
@@ -836,19 +836,19 @@ function CashierScreen({
         ) : null}
       </div>
 
-      <aside className="hidden md:block">{orderPanel}</aside>
+      <aside className="hidden xl:block">{orderPanel}</aside>
 
       <button
-        className="fixed bottom-4 left-4 right-4 z-30 h-14 rounded-lg bg-emerald-700 text-base font-black text-white shadow-lg md:hidden"
+        className="fixed bottom-4 left-4 right-4 z-30 h-14 rounded-lg bg-emerald-700 text-base font-black text-white shadow-lg xl:hidden"
         onClick={() => setCartOpen(true)}
       >
         현재 주문 {lines.reduce((sum, line) => sum + line.quantity, 0)}개 · {won(total)}
       </button>
 
       {cartOpen ? (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-50 xl:hidden">
           <button className="absolute inset-0 bg-stone-950/55" aria-label="현재 주문 닫기" onClick={() => setCartOpen(false)} />
-          <div className="absolute bottom-0 right-0 top-0 w-[88vw] max-w-sm overflow-y-auto bg-[#f7f7f4] p-4 shadow-2xl">
+          <div className="absolute bottom-0 right-0 top-0 w-[88vw] max-w-md overflow-y-auto bg-[#f7f7f4] p-4 shadow-2xl">
             <button
               className="mb-3 grid h-10 w-10 place-items-center rounded-lg bg-white shadow-sm"
               aria-label="현재 주문 닫기"
@@ -952,7 +952,7 @@ function MakerScreen({
           </button>
         ))}
       </div>
-      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {visibleTickets.length ? (
           visibleTickets.map(({ order, items }) => (
             <KitchenTicket
