@@ -960,20 +960,28 @@ function KitchenTicket({
       ) : null}
       <div className="my-4 space-y-2">
         {items.map((item) => (
-          <div key={item.id} className="grid gap-2 rounded-lg bg-stone-50 p-3">
+          <div
+            key={item.id}
+            className={`grid min-h-28 gap-2 rounded-lg p-3 ${item.prep_status === "완료" ? "bg-emerald-50" : "bg-stone-50"}`}
+          >
             <div className="flex justify-between gap-2 text-xl font-black">
               <span>{item.item_name_snapshot}</span>
               <span>x {item.quantity}</span>
             </div>
-            <button
-              className={`h-12 rounded-lg text-base font-black disabled:opacity-50 ${
-                item.prep_status === "완료" ? "bg-emerald-700 text-white" : "bg-stone-950 text-white"
-              }`}
-              disabled={disabled}
-              onClick={() => onSetItemDone(item, item.prep_status !== "완료")}
-            >
-              {item.prep_status === "완료" ? "완료 취소" : `${item.item_name_snapshot} 완료`}
-            </button>
+            {item.prep_status === "완료" ? (
+              <div className="grid grid-cols-[1fr_82px] gap-2">
+                <div className="grid h-12 place-items-center rounded-lg bg-emerald-700 text-base font-black text-white">
+                  완료됨
+                </div>
+                <button className="h-12 rounded-lg bg-white text-sm font-black text-emerald-800 disabled:opacity-50" disabled={disabled} onClick={() => onSetItemDone(item, false)}>
+                  취소
+                </button>
+              </div>
+            ) : (
+              <button className="h-12 rounded-lg bg-stone-950 text-base font-black text-white disabled:opacity-50" disabled={disabled} onClick={() => onSetItemDone(item, true)}>
+                {item.item_name_snapshot} 완료
+              </button>
+            )}
           </div>
         ))}
       </div>
