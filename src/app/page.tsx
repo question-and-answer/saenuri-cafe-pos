@@ -1291,33 +1291,77 @@ function InventoryAdmin({
     if (error) setNotice({ kind: "warn", text: error.message });
     else await log("inventory_changed", "menu_item", item.id, item, { ...item, ...patch });
   };
+
+  const adjustStock = (item: MenuItem, amount: number) => {
+    const current = item.stock_unknown ? 0 : (item.stock_quantity ?? 0);
+    const next = Math.max(0, current + amount);
+    void save(item, {
+      stock_unknown: false,
+      stock_quantity: next,
+      is_sold_out: next === 0 ? true : item.is_sold_out && next === 0,
+    });
+  };
+
   return (
     <Panel title="재고 관리" icon={<Package size={20} />}>
       <div className="mb-4 rounded-lg bg-stone-50 p-3 text-sm font-black">기본 부족 기준: {settings.default_low_stock_threshold}개</div>
-      <div className="space-y-2">
+      <div className="grid gap-3 md:grid-cols-2">
         {menu.map((item) => {
           const threshold = item.low_stock_threshold ?? settings.default_low_stock_threshold;
           const low = !item.stock_unknown && Number(item.stock_quantity) <= threshold;
+          const empty = !item.stock_unknown && Number(item.stock_quantity) === 0;
           return (
-            <div key={item.id} className={`rounded-lg border p-3 ${low ? "border-amber-300 bg-amber-50" : "border-stone-200 bg-white"}`}>
-              <div className="flex justify-between gap-3">
-                <strong>{item.name}</strong>
-                {low ? <span className="text-sm font-black text-amber-900">부족</span> : null}
+            <div key={item.id} className={`rounded-lg border p-3 ${empty || item.is_sold_out ? "border-rose-300 bg-rose-50" : low ? "border-amber-300 bg-amber-50" : "border-stone-200 bg-white"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <strong className="text-lg">{item.name}</strong>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs font-black">
+                    {item.stock_unknown ? <span className="rounded-full bg-stone-200 px-2 py-1">재고 미설정</span> : <span className="rounded-full bg-white px-2 py-1">재고 {item.stock_quantity}개</span>}
+                    {item.is_sold_out ? <span className="rounded-full bg-rose-700 px-2 py-1 text-white">품절</span> : null}
+                    {low && !item.is_sold_out ? <span className="rounded-full bg-amber-200 px-2 py-1 text-amber-950">부족</span> : null}
+                  </div>
+                </div>
+                <div className="text-right text-3xl font-black">{item.stock_unknown ? "?" : item.stock_quantity}</div>
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_140px_110px]">
-                <label className="flex items-center gap-2 text-sm font-black">
-                  <input type="checkbox" checked={item.stock_unknown} onChange={(e) => save(item, { stock_unknown: e.target.checked, stock_quantity: e.target.checked ? null : 0 })} />
-                  재고 미설정
-                </label>
+
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {[-10, -1, 1, 10].map((amount) => (
+                  <button
+                    key={amount}
+                    className={`h-12 rounded-lg text-lg font-black ${amount < 0 ? "bg-stone-100" : "bg-emerald-700 text-white"}`}
+                    onClick={() => adjustStock(item, amount)}
+                  >
+                    {amount > 0 ? `+${amount}` : amount}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr]">
                 <input
                   className="h-11 rounded-lg border border-stone-300 px-3"
-                  disabled={item.stock_unknown}
                   inputMode="numeric"
+                  placeholder="직접 입력"
                   defaultValue={item.stock_quantity ?? ""}
                   onBlur={(e) => save(item, { stock_unknown: false, stock_quantity: Number(e.target.value || 0), is_sold_out: Number(e.target.value || 0) === 0 })}
                 />
-                <button className={`h-11 rounded-lg font-black ${item.is_sold_out ? "bg-rose-700 text-white" : "bg-stone-100"}`} onClick={() => save(item, { is_sold_out: !item.is_sold_out })}>
-                  품절
+                <input
+                  className="h-11 rounded-lg border border-stone-300 px-3"
+                  inputMode="numeric"
+                  placeholder={`부족 기준 ${threshold}`}
+                  defaultValue={item.low_stock_threshold ?? ""}
+                  onBlur={(e) => save(item, { low_stock_threshold: e.target.value === "" ? null : Number(e.target.value || 0) })}
+                />
+              </div>
+
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <button className="h-11 rounded-lg bg-stone-100 text-sm font-black" onClick={() => save(item, { stock_unknown: true, stock_quantity: null, is_sold_out: false })}>
+                  재고 미설정
+                </button>
+                <button className={`h-11 rounded-lg text-sm font-black ${item.is_sold_out ? "bg-rose-700 text-white" : "bg-stone-100"}`} onClick={() => save(item, { is_sold_out: !item.is_sold_out })}>
+                  {item.is_sold_out ? "품절 해제" : "품절"}
+                </button>
+                <button className="h-11 rounded-lg bg-white text-sm font-black" onClick={() => save(item, { stock_unknown: false, stock_quantity: threshold, is_sold_out: false })}>
+                  기준만큼
                 </button>
               </div>
             </div>
