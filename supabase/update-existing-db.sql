@@ -1,6 +1,18 @@
 alter table orders
 add column if not exists memo text not null default '';
 
+alter table settings
+add column if not exists show_cash_received boolean not null default true;
+
+alter table settings
+add column if not exists show_payment_status boolean not null default true;
+
+alter table settings
+add column if not exists menu_info_click_adds_item boolean not null default true;
+
+alter table settings
+add column if not exists show_order_timer boolean not null default true;
+
 alter table menu_items
 add column if not exists prep_required boolean not null default true;
 
