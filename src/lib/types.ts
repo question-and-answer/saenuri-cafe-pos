@@ -39,6 +39,7 @@ export type Order = {
   total_amount: number;
   received_amount: number | null;
   change_amount: number | null;
+  memo: string;
   created_by_staff_id: string | null;
   created_at: string;
   updated_at: string;

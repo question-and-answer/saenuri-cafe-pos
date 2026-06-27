@@ -75,6 +75,8 @@ const actionText: Record<string, string> = {
   menu_changed: "메뉴 변경",
   inventory_changed: "재고 변경",
   settings_changed: "설정 변경",
+  admin_code_changed: "관리자 코드 변경",
+  test_data_reset: "테스트 기록 초기화",
   backup_created: "백업 생성",
   export_created: "엑셀 내보내기",
 };
@@ -555,6 +557,7 @@ function CashierScreen({
   const [method, setMethod] = useState<PaymentMethod>("현금");
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("결제 완료");
   const [received, setReceived] = useState("");
+  const [memo, setMemo] = useState("");
   const [saving, setSaving] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
@@ -579,6 +582,7 @@ function CashierScreen({
       p_payment_method: method,
       p_payment_status: effectivePaymentStatus,
       p_received_amount: method === "현금" && showCashReceived ? Number(received || total) : null,
+      p_memo: memo.trim() || null,
     });
     setSaving(false);
     if (error) {
@@ -588,6 +592,7 @@ function CashierScreen({
     await refreshData();
     setCart({});
     setReceived("");
+    setMemo("");
     setPaymentStatus("결제 완료");
     setCartOpen(false);
     setNotice({ kind: "ok", text: "주문이 접수되었습니다." });
@@ -618,6 +623,17 @@ function CashierScreen({
       <div className="my-4 flex items-center justify-between border-t border-stone-200 pt-4">
         <span className="font-black">총액</span>
         <strong className="text-2xl">{won(total)}</strong>
+      </div>
+
+      <div className="mb-4">
+        <label className="text-sm font-black">메모</label>
+        <textarea
+          className="mt-2 h-20 w-full resize-none rounded-lg border border-stone-300 px-3 py-2"
+          value={memo}
+          onChange={(event) => setMemo(event.target.value)}
+          placeholder="예: 덜 달게, 먼저 가져감"
+          maxLength={120}
+        />
       </div>
 
       <Segmented value={method} options={["현금", "계좌이체"]} onChange={(value) => setMethod(value as PaymentMethod)} />
@@ -902,6 +918,9 @@ function KitchenTicket({
       </div>
       {order.payment_status === "미결제" ? (
         <div className="mt-3 rounded-lg bg-amber-100 p-3 text-sm font-black text-amber-900">미결제</div>
+      ) : null}
+      {order.memo ? (
+        <div className="mt-3 rounded-lg bg-sky-50 p-3 text-sm font-black text-sky-900">메모: {order.memo}</div>
       ) : null}
       <div className="my-4 space-y-2">
         {items.map((item) => (
@@ -1259,10 +1278,12 @@ function HistoryAdmin({ logs }: { logs: ActivityLog[] }) {
 }
 
 function SettingsAdmin({
+  staff,
   settings,
   setNotice,
   log,
 }: {
+  staff: Staff;
   settings: Settings;
   setNotice: (notice: Notice) => void;
   log: (action: string, targetType: string, targetId: string, beforeValue: unknown, afterValue: unknown) => Promise<void>;
@@ -1273,7 +1294,13 @@ function SettingsAdmin({
   const [showPaymentStatus, setShowPaymentStatus] = useState(settings.show_payment_status !== false);
   const [menuInfoClickAddsItem, setMenuInfoClickAddsItem] = useState(settings.menu_info_click_adds_item !== false);
   const [showOrderTimer, setShowOrderTimer] = useState(settings.show_order_timer !== false);
+  const [currentAdminCode, setCurrentAdminCode] = useState("");
+  const [newAdminCode, setNewAdminCode] = useState("");
+  const [newAdminCodeConfirm, setNewAdminCodeConfirm] = useState("");
+  const [resetCommand, setResetCommand] = useState("");
   const [saving, setSaving] = useState(false);
+  const [securitySaving, setSecuritySaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const save = async () => {
     if (!supabase) return;
@@ -1330,8 +1357,57 @@ function SettingsAdmin({
     reader.readAsDataURL(file);
   };
 
+  const changeAdminCode = async () => {
+    if (!supabase || securitySaving) return;
+    if (newAdminCode.length < 4) {
+      setNotice({ kind: "warn", text: "새 관리자 코드는 4자리 이상으로 입력해 주세요." });
+      return;
+    }
+    if (newAdminCode !== newAdminCodeConfirm) {
+      setNotice({ kind: "warn", text: "새 관리자 코드 확인이 맞지 않습니다." });
+      return;
+    }
+    if (!confirm("관리자 코드를 변경할까요? 다음 로그인부터 새 코드가 필요합니다.")) return;
+    setSecuritySaving(true);
+    const { error } = await supabase.rpc("change_admin_code", {
+      p_staff_id: staff.id,
+      p_current_code: currentAdminCode,
+      p_new_code: newAdminCode,
+    });
+    setSecuritySaving(false);
+    if (error) {
+      setNotice({ kind: "warn", text: error.message });
+      return;
+    }
+    setCurrentAdminCode("");
+    setNewAdminCode("");
+    setNewAdminCodeConfirm("");
+    setNotice({ kind: "ok", text: "관리자 코드가 변경되었습니다." });
+  };
+
+  const resetTestData = async () => {
+    if (!supabase || resetting) return;
+    if (resetCommand.trim() !== "테스트초기화") {
+      setNotice({ kind: "warn", text: "명령어를 정확히 입력해 주세요: 테스트초기화" });
+      return;
+    }
+    if (!confirm("테스트 주문/결제/기록을 초기화할까요? 주문번호는 1번으로 돌아갑니다.")) return;
+    setResetting(true);
+    const { error } = await supabase.rpc("reset_event_test_data", {
+      p_staff_id: staff.id,
+      p_command: resetCommand.trim(),
+    });
+    setResetting(false);
+    if (error) {
+      setNotice({ kind: "warn", text: error.message });
+      return;
+    }
+    setResetCommand("");
+    setNotice({ kind: "ok", text: "테스트 기록이 초기화되었습니다." });
+  };
+
   return (
-    <Panel title="계좌 설정" icon={<ImagePlus size={20} />}>
+    <Panel title="설정" icon={<ImagePlus size={20} />}>
       <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
         <div>
           <label className="text-sm font-black">계좌 안내 문구</label>
@@ -1409,6 +1485,52 @@ function SettingsAdmin({
       >
         {saving ? "저장 중" : "설정 저장"}
       </button>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-lg bg-white p-4">
+          <h3 className="font-black">관리자 코드 변경</h3>
+          <div className="mt-3 grid gap-2">
+            <input
+              className="h-11 rounded-lg border border-stone-300 px-3"
+              type="password"
+              value={currentAdminCode}
+              onChange={(event) => setCurrentAdminCode(event.target.value)}
+              placeholder="현재 관리자 코드"
+            />
+            <input
+              className="h-11 rounded-lg border border-stone-300 px-3"
+              type="password"
+              value={newAdminCode}
+              onChange={(event) => setNewAdminCode(event.target.value)}
+              placeholder="새 관리자 코드"
+            />
+            <input
+              className="h-11 rounded-lg border border-stone-300 px-3"
+              type="password"
+              value={newAdminCodeConfirm}
+              onChange={(event) => setNewAdminCodeConfirm(event.target.value)}
+              placeholder="새 관리자 코드 확인"
+            />
+            <button className="h-11 rounded-lg bg-stone-950 font-black text-white disabled:opacity-50" disabled={securitySaving} onClick={changeAdminCode}>
+              {securitySaving ? "변경 중" : "관리자 코드 변경"}
+            </button>
+          </div>
+        </div>
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
+          <h3 className="font-black text-rose-950">테스트 기록 초기화</h3>
+          <p className="mt-2 text-sm font-bold text-rose-900">
+            주문, 결제, 백업, 활동 기록을 지우고 주문번호를 1번으로 돌립니다. 메뉴, 설정, 직원 승인은 유지됩니다.
+          </p>
+          <input
+            className="mt-3 h-11 w-full rounded-lg border border-rose-200 px-3"
+            value={resetCommand}
+            onChange={(event) => setResetCommand(event.target.value)}
+            placeholder="테스트초기화"
+          />
+          <button className="mt-2 h-11 w-full rounded-lg bg-rose-700 font-black text-white disabled:opacity-50" disabled={resetting} onClick={resetTestData}>
+            {resetting ? "초기화 중" : "테스트 기록 초기화"}
+          </button>
+        </div>
+      </div>
     </Panel>
   );
 }
@@ -1493,6 +1615,7 @@ function AdminOrderRows({
             <div>
               <strong>#{orderNo(order.order_number)}</strong>
               <p className="mt-1 text-sm text-stone-600">{itemsText(order.id, orderItems)}</p>
+              {order.memo ? <p className="mt-2 rounded-lg bg-sky-50 p-2 text-sm font-black text-sky-900">메모: {order.memo}</p> : null}
             </div>
             <StatusBadge status={order.status} />
           </div>
@@ -1524,6 +1647,7 @@ function OrderList({ orders, orderItems }: { orders: Order[]; orderItems: OrderI
             </div>
           </div>
           <p className="mt-2 text-sm font-black text-stone-700">{itemsText(order.id, orderItems)}</p>
+          {order.memo ? <p className="mt-2 rounded-lg bg-sky-50 p-2 text-sm font-black text-sky-900">메모: {order.memo}</p> : null}
           <div className="mt-2 text-right font-black">{won(order.total_amount)}</div>
         </div>
       ))}

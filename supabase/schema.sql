@@ -60,6 +60,7 @@ create table orders (
   total_amount integer not null default 0,
   received_amount integer,
   change_amount integer,
+  memo text not null default '',
   created_by_staff_id uuid references staff(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -230,7 +231,8 @@ create or replace function create_pos_order(
   p_items jsonb,
   p_payment_method text,
   p_payment_status text,
-  p_received_amount integer default null
+  p_received_amount integer default null,
+  p_memo text default null
 )
 returns uuid
 language plpgsql
@@ -268,11 +270,11 @@ begin
   -- reference it while the same database transaction builds the ticket.
   insert into orders (
     id, order_number, status, payment_status, payment_method, total_amount,
-    received_amount, change_amount, created_by_staff_id
+    received_amount, change_amount, memo, created_by_staff_id
   )
   values (
     v_order_id, v_order_number, '접수', p_payment_status, p_payment_method, 0,
-    p_received_amount, 0, p_staff_id
+    p_received_amount, 0, left(coalesce(trim(p_memo), ''), 120), p_staff_id
   );
 
   for v_item in select * from jsonb_array_elements(p_items)
@@ -319,10 +321,99 @@ begin
   insert into activity_logs (actor_staff_id, actor_name, actor_role, action_type, target_type, target_id, after_value)
   values (
     p_staff_id, v_staff.name, v_staff.role, 'order_created', 'order', v_order_id::text,
-    jsonb_build_object('order_number', v_order_number, 'total_amount', v_total, 'payment_status', p_payment_status)
+    jsonb_build_object('order_number', v_order_number, 'total_amount', v_total, 'payment_status', p_payment_status, 'memo', left(coalesce(trim(p_memo), ''), 120))
   );
 
   return v_order_id;
+end;
+$$;
+
+create or replace function change_admin_code(
+  p_staff_id uuid,
+  p_current_code text,
+  p_new_code text
+)
+returns void
+language plpgsql
+security definer
+as $$
+declare
+  v_staff staff;
+  v_settings settings;
+begin
+  select * into v_staff from staff where id = p_staff_id and status = 'approved' and role = 'admin';
+  if not found then
+    raise exception '관리자 권한이 없습니다.';
+  end if;
+
+  select * into v_settings from settings where id = 'event' for update;
+  if v_settings.admin_code_hash <> crypt(p_current_code, v_settings.admin_code_hash) then
+    raise exception '현재 관리자 코드가 맞지 않습니다.';
+  end if;
+  if length(trim(coalesce(p_new_code, ''))) < 4 then
+    raise exception '새 관리자 코드는 4자리 이상이어야 합니다.';
+  end if;
+
+  update settings
+  set admin_code_hash = crypt(trim(p_new_code), gen_salt('bf'))
+  where id = 'event';
+
+  insert into activity_logs (actor_staff_id, actor_name, actor_role, action_type, target_type, target_id, after_value)
+  values (p_staff_id, v_staff.name, v_staff.role, 'admin_code_changed', 'settings', 'event', jsonb_build_object('changed', true));
+end;
+$$;
+
+create or replace function reset_event_test_data(
+  p_staff_id uuid,
+  p_command text
+)
+returns void
+language plpgsql
+security definer
+as $$
+declare
+  v_staff staff;
+  v_row record;
+begin
+  select * into v_staff from staff where id = p_staff_id and status = 'approved' and role = 'admin';
+  if not found then
+    raise exception '관리자 권한이 없습니다.';
+  end if;
+  if trim(coalesce(p_command, '')) <> '테스트초기화' then
+    raise exception '초기화 명령어가 맞지 않습니다.';
+  end if;
+
+  -- Test orders may have already reduced inventory. Return quantities for
+  -- orders that were not canceled before clearing event records.
+  for v_row in
+    select oi.menu_item_id, sum(oi.quantity)::integer as quantity
+    from order_items oi
+    join orders o on o.id = oi.order_id
+    join menu_items m on m.id = oi.menu_item_id
+    where o.status <> '취소'
+      and oi.menu_item_id is not null
+      and not m.stock_unknown
+    group by oi.menu_item_id
+  loop
+    update menu_items
+    set stock_quantity = coalesce(stock_quantity, 0) + v_row.quantity,
+        is_sold_out = false
+    where id = v_row.menu_item_id;
+  end loop;
+
+  delete from backups;
+  delete from inventory_logs;
+  delete from payments;
+  delete from order_items;
+  delete from orders;
+  delete from activity_logs;
+
+  update settings
+  set next_order_number = 1
+  where id = 'event';
+
+  insert into activity_logs (actor_staff_id, actor_name, actor_role, action_type, target_type, target_id, after_value)
+  values (p_staff_id, v_staff.name, v_staff.role, 'test_data_reset', 'settings', 'event', jsonb_build_object('next_order_number', 1));
 end;
 $$;
 
