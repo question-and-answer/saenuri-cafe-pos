@@ -133,6 +133,89 @@ begin
 end;
 $$;
 
+create or replace function adjust_order_item_quantity(
+  p_staff_id uuid,
+  p_order_item_id uuid,
+  p_quantity integer
+)
+returns void
+language plpgsql
+security definer
+as $$
+declare
+  v_staff staff;
+  v_item order_items;
+  v_order orders;
+  v_menu menu_items;
+  v_delta integer;
+  v_before integer;
+  v_after integer;
+  v_total integer;
+begin
+  select * into v_staff from staff where id = p_staff_id and status = 'approved';
+  if not found or v_staff.role not in ('admin', 'cashier') then
+    raise exception '주문 수정 권한이 없습니다.';
+  end if;
+  if p_quantity < 1 then
+    raise exception '수량은 1개 이상이어야 합니다.';
+  end if;
+
+  select * into v_item from order_items where id = p_order_item_id for update;
+  if not found then
+    raise exception '주문 항목을 찾을 수 없습니다.';
+  end if;
+
+  select * into v_order from orders where id = v_item.order_id for update;
+  if not found or v_order.status in ('취소', '픽업 완료') then
+    raise exception '수정할 수 없는 주문입니다.';
+  end if;
+
+  v_delta := p_quantity - v_item.quantity;
+
+  select * into v_menu from menu_items where id = v_item.menu_item_id for update;
+  if found and not v_menu.stock_unknown and v_delta <> 0 then
+    if v_delta > 0 and coalesce(v_menu.stock_quantity, 0) < v_delta then
+      raise exception '% 재고가 부족합니다.', v_menu.name;
+    end if;
+    v_before := v_menu.stock_quantity;
+    v_after := coalesce(v_menu.stock_quantity, 0) - v_delta;
+    update menu_items
+    set stock_quantity = v_after,
+        is_sold_out = case when v_after = 0 then true else is_sold_out end
+    where id = v_menu.id;
+
+    insert into inventory_logs (menu_item_id, order_id, change_amount, reason, before_quantity, after_quantity, actor_staff_id)
+    values (v_menu.id, v_item.order_id, -v_delta, 'order_edited', v_before, v_after, p_staff_id);
+  end if;
+
+  update order_items
+  set quantity = p_quantity,
+      subtotal = item_price_snapshot * p_quantity
+  where id = p_order_item_id;
+
+  select coalesce(sum(subtotal), 0) into v_total
+  from order_items
+  where order_id = v_item.order_id;
+
+  update orders
+  set total_amount = v_total,
+      change_amount = greatest(coalesce(received_amount, v_total) - v_total, 0)
+  where id = v_item.order_id;
+
+  update payments
+  set amount = v_total,
+      change_amount = greatest(coalesce(received_amount, v_total) - v_total, 0)
+  where order_id = v_item.order_id;
+
+  insert into activity_logs (actor_staff_id, actor_name, actor_role, action_type, target_type, target_id, before_value, after_value)
+  values (
+    p_staff_id, v_staff.name, v_staff.role, 'order_item_quantity_changed', 'order_item', p_order_item_id::text,
+    jsonb_build_object('quantity', v_item.quantity),
+    jsonb_build_object('quantity', p_quantity, 'order_total', v_total)
+  );
+end;
+$$;
+
 create or replace function set_order_item_prep_status(
   p_staff_id uuid,
   p_order_item_id uuid,

@@ -56,6 +56,7 @@ const actionText: Record<string, string> = {
   order_created: "주문 생성",
   order_status_changed: "주문 상태 변경",
   order_canceled: "주문 취소",
+  order_item_quantity_changed: "주문 수량 변경",
   item_prep_changed: "제조 항목 변경",
   payment_changed: "결제 변경",
   menu_created: "메뉴 추가",
@@ -121,6 +122,7 @@ export default function Home() {
   const [notice, setNotice] = useState<Notice>(null);
   const [view, setView] = useState<View | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const seenPendingApprovalCountRef = useRef<number | null>(null);
 
   const me = useMemo(
@@ -253,6 +255,17 @@ export default function Home() {
 
   useEffect(() => {
     queueMicrotask(() => setDeviceToken(getDeviceSessionId()));
+  }, []);
+
+  useEffect(() => {
+    const syncOnline = () => setIsOnline(navigator.onLine);
+    syncOnline();
+    window.addEventListener("online", syncOnline);
+    window.addEventListener("offline", syncOnline);
+    return () => {
+      window.removeEventListener("online", syncOnline);
+      window.removeEventListener("offline", syncOnline);
+    };
   }, []);
 
   useEffect(() => {
@@ -394,6 +407,12 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {!isOnline ? (
+        <div className="sticky top-[65px] z-30 bg-rose-700 px-4 py-3 text-center text-sm font-black text-white">
+          인터넷 연결이 끊겼습니다. 주문/수정 저장이 실패할 수 있습니다.
+        </div>
+      ) : null}
 
       {notice ? (
         <div
@@ -1262,20 +1281,34 @@ function OrderAdmin({
     const { error } = await supabase.from("orders").update({ payment_status: next }).eq("id", order.id);
     if (error) setNotice({ kind: "warn", text: error.message });
     else {
+      await supabase.from("payments").update({ payment_status: next }).eq("order_id", order.id);
       await log("payment_changed", "order", order.id, { payment_status: order.payment_status }, { payment_status: next });
       setNotice({ kind: "ok", text: "결제 상태가 변경되었습니다." });
     }
   };
+  const adjustItemQuantity = async (order: Order, item: OrderItem, nextQuantity: number) => {
+    if (!supabase) return;
+    if (nextQuantity < 1) {
+      setNotice({ kind: "warn", text: "수량은 1개 이상이어야 합니다. 삭제는 취소/재주문으로 처리해 주세요." });
+      return;
+    }
+    const { error } = await supabase.rpc("adjust_order_item_quantity", {
+      p_staff_id: staff.id,
+      p_order_item_id: item.id,
+      p_quantity: nextQuantity,
+    });
+    setNotice(error ? { kind: "warn", text: error.message } : { kind: "ok", text: `#${orderNo(order.order_number)} 수량이 수정되었습니다.` });
+  };
   return (
     <div className="space-y-4">
       <Panel title="진행 중 주문" icon={<Ticket size={20} />}>
-        <AdminOrderRows orders={activeOrders} orderItems={orderItems} onCancel={cancelOrder} onPayment={changePayment} />
+        <AdminOrderRows orders={activeOrders} orderItems={orderItems} onCancel={cancelOrder} onPayment={changePayment} onAdjustItem={adjustItemQuantity} />
       </Panel>
       <Panel title="미결제 주문" icon={<AlertTriangle size={20} />}>
-        <AdminOrderRows orders={orders.filter((o) => o.status !== "취소" && o.payment_status === "미결제")} orderItems={orderItems} onCancel={cancelOrder} onPayment={changePayment} />
+        <AdminOrderRows orders={orders.filter((o) => o.status !== "취소" && o.payment_status === "미결제")} orderItems={orderItems} onCancel={cancelOrder} onPayment={changePayment} onAdjustItem={adjustItemQuantity} />
       </Panel>
       <Panel title="완료 주문" icon={<CheckCircle2 size={20} />}>
-        <AdminOrderRows orders={completedOrders} orderItems={orderItems} onCancel={cancelOrder} onPayment={changePayment} />
+        <AdminOrderRows orders={completedOrders} orderItems={orderItems} onCancel={cancelOrder} onPayment={changePayment} onAdjustItem={adjustItemQuantity} />
       </Panel>
       <Panel title="취소 주문" icon={<Trash2 size={20} />}>
         <OrderList orders={canceledOrders} orderItems={orderItems} />
@@ -1748,30 +1781,50 @@ function AdminOrderRows({
   orderItems,
   onCancel,
   onPayment,
+  onAdjustItem,
 }: {
   orders: Order[];
   orderItems: OrderItem[];
   onCancel: (order: Order) => void;
   onPayment: (order: Order) => void;
+  onAdjustItem: (order: Order, item: OrderItem, nextQuantity: number) => void;
 }) {
   if (!orders.length) return <Empty text="주문이 없습니다." />;
   return (
     <div className="space-y-2">
       {orders.map((order) => (
         <div key={order.id} className="rounded-lg bg-white p-3">
+          {(() => {
+            const canEditItems = !["픽업 완료", "취소"].includes(order.status);
+            return (
+              <>
           <div className="flex items-start justify-between gap-3">
             <div>
               <strong>#{orderNo(order.order_number)}</strong>
-              <p className="mt-1 text-sm text-stone-600">{itemsText(order.id, orderItems)}</p>
               {order.memo ? <p className="mt-2 rounded-lg bg-sky-50 p-2 text-sm font-black text-sky-900">메모: {order.memo}</p> : null}
             </div>
             <StatusBadge status={order.status} />
           </div>
+          <div className="mt-3 space-y-2">
+            {stableOrderItems(orderItems.filter((item) => item.order_id === order.id)).map((item) => (
+              <div key={item.id} className="grid grid-cols-[1fr_40px_42px_40px] items-center gap-2 rounded-lg bg-stone-50 p-2">
+                <div className="min-w-0 font-black">{item.item_name_snapshot}</div>
+                <button className="h-10 rounded-lg bg-white text-lg font-black disabled:opacity-40" disabled={!canEditItems} onClick={() => onAdjustItem(order, item, item.quantity - 1)}>-</button>
+                <div className="text-center font-black">{item.quantity}</div>
+                <button className="h-10 rounded-lg bg-white text-lg font-black disabled:opacity-40" disabled={!canEditItems} onClick={() => onAdjustItem(order, item, item.quantity + 1)}>+</button>
+              </div>
+            ))}
+          </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            <button className="h-11 rounded-lg bg-stone-100 font-black" onClick={() => onPayment(order)}>{order.payment_status}</button>
+            <button className={`h-11 rounded-lg font-black ${order.payment_status === "미결제" ? "bg-amber-200 text-amber-950" : "bg-stone-100"}`} onClick={() => onPayment(order)}>
+              {order.payment_status === "미결제" ? "결제 완료 처리" : order.payment_status}
+            </button>
             <button className="h-11 rounded-lg bg-stone-100 font-black" onClick={() => onCancel(order)}>취소</button>
             <div className="grid place-items-center rounded-lg bg-stone-50 text-sm font-black">{won(order.total_amount)}</div>
           </div>
+              </>
+            );
+          })()}
         </div>
       ))}
     </div>
