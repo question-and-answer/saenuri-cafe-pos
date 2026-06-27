@@ -770,9 +770,9 @@ function CashierScreen({
               const quantity = cart[item.id] ?? 0;
               const itemInfo = (
                 <>
-                  <div className="text-lg font-black">{item.name}</div>
-                  <div className="mt-1 text-sm font-black text-emerald-700">{won(item.price)}</div>
-                  <div className="mt-3 text-xs font-black">
+                  <div className="text-xl font-black">{item.name}</div>
+                  <div className="mt-1 text-base font-black text-emerald-700">{won(item.price)}</div>
+                  <div className="mt-3 text-sm font-black">
                     {soldOut ? "품절" : item.stock_unknown ? "재고 미설정" : `재고 ${item.stock_quantity}`}
                   </div>
                 </>
