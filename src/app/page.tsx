@@ -185,6 +185,72 @@ export default function Home() {
     setLoading(false);
   }, []);
 
+  const reloadTable = useCallback(async (table: string) => {
+    if (!supabase) return;
+
+    if (table === "staff") {
+      const { data, error } = await supabase.from("staff").select("*");
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setStaff(newest((data ?? []) as Staff[]));
+      return;
+    }
+
+    if (table === "menu_items") {
+      const { data, error } = await supabase.from("menu_items").select("*");
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setMenu(oldest((data ?? []) as MenuItem[]));
+      return;
+    }
+
+    if (table === "orders") {
+      const { data, error } = await supabase.from("orders").select("*");
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setOrders(newest((data ?? []) as Order[]));
+      return;
+    }
+
+    if (table === "order_items") {
+      const { data, error } = await supabase.from("order_items").select("*");
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setOrderItems(stableOrderItems((data ?? []) as OrderItem[]));
+      return;
+    }
+
+    if (table === "payments") {
+      const { data, error } = await supabase.from("payments").select("*");
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setPayments((data ?? []) as Payment[]);
+      return;
+    }
+
+    if (table === "activity_logs") {
+      const { data, error } = await supabase.from("activity_logs").select("*");
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setLogs(newest((data ?? []) as ActivityLog[]));
+      return;
+    }
+
+    if (table === "inventory_logs") {
+      const { data, error } = await supabase.from("inventory_logs").select("*");
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setInventoryLogs(newest((data ?? []) as InventoryLog[]));
+      return;
+    }
+
+    if (table === "backups") {
+      const { data, error } = await supabase.from("backups").select("*");
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setBackups(newest((data ?? []) as Backup[]));
+      return;
+    }
+
+    if (table === "settings") {
+      const { data, error } = await supabase.from("settings").select("*").eq("id", "event").maybeSingle();
+      if (error) setNotice({ kind: "warn", text: error.message });
+      else setSettings((data as Settings | null) ?? emptySettings);
+    }
+  }, []);
+
   useEffect(() => {
     queueMicrotask(() => setDeviceToken(getDeviceSessionId()));
   }, []);
@@ -205,13 +271,13 @@ export default function Home() {
       "settings",
       "backups",
     ].forEach((table) => {
-      channel.on("postgres_changes", { event: "*", schema: "public", table }, () => void reload());
+      channel.on("postgres_changes", { event: "*", schema: "public", table }, () => void reloadTable(table));
     });
     channel.subscribe();
     return () => {
       void client.removeChannel(channel);
     };
-  }, [deviceToken, reload]);
+  }, [deviceToken, reload, reloadTable]);
 
   useEffect(() => {
     const client = supabase;
