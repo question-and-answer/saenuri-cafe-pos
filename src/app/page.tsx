@@ -11,13 +11,11 @@ import {
   Maximize2,
   Minimize2,
   Package,
-  ShieldCheck,
   Ticket,
   Trash2,
-  Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fullTime, orderNo, shortTime, won } from "@/lib/format";
 import { getDeviceSessionId, isSupabaseConfigured, supabase } from "@/lib/supabase";
 import type {
@@ -123,17 +121,12 @@ export default function Home() {
   const [view, setView] = useState<View | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
-  const seenPendingApprovalCountRef = useRef<number | null>(null);
 
   const me = useMemo(
     () => staff.find((person) => person.device_token === deviceToken) ?? null,
     [deviceToken, staff],
   );
   const approved = me?.status === "approved" ? me : null;
-  const pendingApprovalCount = useMemo(
-    () => staff.filter((person) => person.status === "pending").length,
-    [staff],
-  );
 
   const reload = useCallback(async () => {
     if (!supabase) return;
@@ -311,23 +304,6 @@ export default function Home() {
   }, [notice]);
 
   useEffect(() => {
-    if (approved?.role !== "admin") {
-      seenPendingApprovalCountRef.current = pendingApprovalCount;
-      return;
-    }
-
-    const previousCount = seenPendingApprovalCountRef.current;
-    if (previousCount !== null && pendingApprovalCount > previousCount) {
-      setNotice({
-        kind: "warn",
-        text: `새 직원 승인 요청이 ${pendingApprovalCount - previousCount}건 들어왔습니다.`,
-      });
-      setView("admin");
-    }
-    seenPendingApprovalCountRef.current = pendingApprovalCount;
-  }, [approved?.role, pendingApprovalCount]);
-
-  useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", syncFullscreen);
     return () => document.removeEventListener("fullscreenchange", syncFullscreen);
@@ -466,7 +442,6 @@ export default function Home() {
         {activeView === "admin" && approved.role === "admin" ? (
           <AdminScreen
             staff={approved}
-            staffList={staff}
             menu={menu}
             orders={orders}
             activeOrders={activeOrders}
@@ -516,30 +491,21 @@ function AccessScreen({
   current: Staff | null;
   setNotice: (notice: Notice) => void;
 }) {
-  const [mode, setMode] = useState<"request" | "admin">("request");
   const [name, setName] = useState(current?.name ?? "");
-  const [role, setRole] = useState<"cashier" | "maker">("cashier");
   const [adminCode, setAdminCode] = useState("");
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
     if (!supabase) return;
     setSaving(true);
-    const result =
-      mode === "admin"
-        ? await supabase.rpc("admin_login", {
-            p_name: name,
-            p_admin_code: adminCode,
-            p_device_token: getDeviceSessionId(),
-          })
-        : await supabase.rpc("request_staff", {
-            p_name: name,
-            p_requested_role: role,
-            p_device_token: getDeviceSessionId(),
-          });
+    const result = await supabase.rpc("admin_login", {
+      p_name: name,
+      p_admin_code: adminCode,
+      p_device_token: getDeviceSessionId(),
+    });
     setSaving(false);
     if (result.error) setNotice({ kind: "warn", text: result.error.message });
-    else setNotice({ kind: "ok", text: mode === "admin" ? "관리자로 로그인되었습니다." : "승인 요청을 보냈습니다." });
+    else setNotice({ kind: "ok", text: "관리자로 로그인되었습니다." });
   };
 
   return (
@@ -548,29 +514,8 @@ function AccessScreen({
         <Coffee className="mb-3 text-emerald-700" size={36} />
         <h1 className="text-2xl font-black">새누리교회 일일카페 POS</h1>
         <p className="mt-2 text-sm text-stone-600">
-          직원은 승인 요청을 보내고, 관리자는 관리자 코드로 바로 로그인합니다.
+          관리자 코드로 로그인하면 주문, 제조, 관리 화면을 모두 사용할 수 있습니다.
         </p>
-
-        {current?.status === "pending" ? (
-          <p className="mt-4 rounded-lg bg-amber-100 p-3 text-sm font-black text-amber-900">
-            {current.name}님의 {roleLabel[current.requested_role]} 요청이 승인 대기 중입니다.
-          </p>
-        ) : null}
-
-        <div className="mt-5 grid grid-cols-2 rounded-lg bg-stone-100 p-1">
-          <button
-            className={`h-11 rounded-md text-sm font-black ${mode === "request" ? "bg-white shadow-sm" : ""}`}
-            onClick={() => setMode("request")}
-          >
-            직원 승인 요청
-          </button>
-          <button
-            className={`h-11 rounded-md text-sm font-black ${mode === "admin" ? "bg-white shadow-sm" : ""}`}
-            onClick={() => setMode("admin")}
-          >
-            관리자 로그인
-          </button>
-        </div>
 
         <label className="mt-5 block text-sm font-black">이름</label>
         <input
@@ -580,37 +525,21 @@ function AccessScreen({
           placeholder="예: 박지후"
         />
 
-        {mode === "request" ? (
-          <>
-            <label className="mt-4 block text-sm font-black">요청 역할</label>
-            <select
-              className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
-              value={role}
-              onChange={(event) => setRole(event.target.value as "cashier" | "maker")}
-            >
-              <option value="cashier">주문 담당</option>
-              <option value="maker">제조 담당</option>
-            </select>
-          </>
-        ) : (
-          <>
-            <label className="mt-4 block text-sm font-black">관리자 코드</label>
-            <input
-              className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
-              type="password"
-              value={adminCode}
-              onChange={(event) => setAdminCode(event.target.value)}
-              placeholder="기본값 1234"
-            />
-          </>
-        )}
+        <label className="mt-4 block text-sm font-black">관리자 코드</label>
+        <input
+          className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
+          type="password"
+          value={adminCode}
+          onChange={(event) => setAdminCode(event.target.value)}
+          placeholder="관리자 코드"
+        />
 
         <button
           className="mt-5 h-14 w-full rounded-lg bg-emerald-700 text-base font-black text-white disabled:opacity-50"
-          disabled={saving || name.trim().length < 1 || (mode === "admin" && adminCode.length < 4)}
+          disabled={saving || name.trim().length < 1 || adminCode.length < 4}
           onClick={submit}
         >
-          {saving ? "처리 중" : mode === "admin" ? "관리자 로그인" : "승인 요청"}
+          {saving ? "처리 중" : "관리자 로그인"}
         </button>
       </section>
     </main>
@@ -1093,7 +1022,6 @@ function KitchenTicket({
 
 function AdminScreen(props: {
   staff: Staff;
-  staffList: Staff[];
   menu: MenuItem[];
   orders: Order[];
   activeOrders: Order[];
@@ -1110,7 +1038,6 @@ function AdminScreen(props: {
   refreshData: () => Promise<void>;
 }) {
   const [tab, setTab] = useState("summary");
-  const pendingStaffCount = props.staffList.filter((person) => person.status === "pending").length;
   const paidOrders = props.orders.filter((order) => order.status !== "취소" && order.payment_status === "결제 완료");
   const unpaidOrders = props.orders.filter((order) => order.status !== "취소" && order.payment_status === "미결제");
   const sales = paidOrders.reduce((sum, order) => sum + order.total_amount, 0);
@@ -1122,7 +1049,6 @@ function AdminScreen(props: {
         {[
           ["summary", "요약"],
           ["orders", "주문"],
-          ["staff", "직원"],
           ["menu", "메뉴"],
           ["inventory", "재고"],
           ["history", "기록"],
@@ -1136,11 +1062,6 @@ function AdminScreen(props: {
             onClick={() => setTab(id)}
           >
             <span>{label}</span>
-            {id === "staff" && pendingStaffCount > 0 ? (
-              <span className={`rounded-full px-2 py-0.5 text-xs ${tab === id ? "bg-white text-emerald-800" : "bg-amber-300 text-stone-950"}`}>
-                {pendingStaffCount}
-              </span>
-            ) : null}
           </button>
         ))}
         </div>
@@ -1161,7 +1082,6 @@ function AdminScreen(props: {
       ) : null}
 
       {tab === "orders" ? <OrderAdmin {...props} /> : null}
-      {tab === "staff" ? <StaffAdmin {...props} /> : null}
       {tab === "menu" ? <MenuAdmin {...props} /> : null}
       {tab === "inventory" ? <InventoryAdmin {...props} /> : null}
       {tab === "history" ? <HistoryAdmin logs={props.logs} /> : null}
@@ -1174,76 +1094,6 @@ function AdminScreen(props: {
         </div>
       ) : null}
     </section>
-  );
-}
-
-function StaffAdmin({
-  staffList,
-  setNotice,
-  log,
-}: {
-  staffList: Staff[];
-  setNotice: (notice: Notice) => void;
-  log: (action: string, targetType: string, targetId: string, beforeValue: unknown, afterValue: unknown) => Promise<void>;
-}) {
-  const updateStaff = async (person: Staff, patch: Partial<Staff>, action: string) => {
-    if (!supabase) return;
-    const { error } = await supabase.from("staff").update(patch).eq("id", person.id);
-    if (error) setNotice({ kind: "warn", text: error.message });
-    else {
-      await log(action, "staff", person.id, person, { ...person, ...patch });
-      setNotice({ kind: "ok", text: "직원 정보가 변경되었습니다." });
-    }
-  };
-  const pending = staffList.filter((person) => person.status === "pending");
-  const approved = staffList.filter((person) => person.status === "approved");
-  return (
-    <div className="space-y-4">
-      <Panel title="승인 대기" icon={<Users size={20} />}>
-        <div className="space-y-2">
-          {pending.length ? (
-            pending.map((person) => (
-              <div key={person.id} className="grid gap-2 rounded-lg bg-white p-3 sm:grid-cols-[1fr_120px_100px_100px]">
-                <strong>{person.name}</strong>
-                <span className="font-black">{roleLabel[person.requested_role]}</span>
-                <button
-                  className="h-11 rounded-lg bg-emerald-700 font-black text-white"
-                  onClick={() => updateStaff(person, { status: "approved", role: person.requested_role, approved_at: new Date().toISOString() }, "staff_approved")}
-                >
-                  승인
-                </button>
-                <button className="h-11 rounded-lg bg-stone-200 font-black" onClick={() => updateStaff(person, { status: "rejected" }, "staff_rejected")}>
-                  거절
-                </button>
-              </div>
-            ))
-          ) : (
-            <p className="rounded-lg bg-stone-50 p-4 text-center text-sm font-black text-stone-500">대기 중인 요청이 없습니다.</p>
-          )}
-        </div>
-      </Panel>
-      <Panel title="승인된 직원" icon={<ShieldCheck size={20} />}>
-        <div className="space-y-2">
-          {approved.map((person) => (
-            <div key={person.id} className="grid gap-2 rounded-lg bg-white p-3 sm:grid-cols-[1fr_150px_100px]">
-              <strong>{person.name}</strong>
-              <select
-                className="h-11 rounded-lg border border-stone-300 px-3"
-                value={person.role ?? person.requested_role}
-                onChange={(event) => updateStaff(person, { role: event.target.value as StaffRole }, "staff_role_changed")}
-              >
-                <option value="admin">관리자</option>
-                <option value="cashier">주문 담당</option>
-                <option value="maker">제조 담당</option>
-              </select>
-              <button className="h-11 rounded-lg bg-stone-200 font-black" onClick={() => updateStaff(person, { status: "revoked", revoked_at: new Date().toISOString() }, "staff_revoked")}>
-                해제
-              </button>
-            </div>
-          ))}
-        </div>
-      </Panel>
-    </div>
   );
 }
 
@@ -1699,7 +1549,7 @@ function SettingsAdmin({
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
           <h3 className="font-black text-rose-950">테스트 기록 초기화</h3>
           <p className="mt-2 text-sm font-bold text-rose-900">
-            주문, 결제, 백업, 활동 기록을 지우고 주문번호를 1번으로 돌립니다. 메뉴, 설정, 직원 승인은 유지됩니다.
+            주문, 결제, 백업, 활동 기록을 지우고 주문번호를 1번으로 돌립니다. 메뉴, 설정, 관리자 로그인은 유지됩니다.
           </p>
           <input
             className="mt-3 h-11 w-full rounded-lg border border-rose-200 px-3"
