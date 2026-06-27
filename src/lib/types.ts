@@ -26,6 +26,8 @@ export type MenuItem = {
   stock_quantity: number | null;
   stock_unknown: boolean;
   low_stock_threshold: number | null;
+  prep_required: boolean;
+  prep_area: string;
   created_at: string;
   updated_at: string;
 };
@@ -55,6 +57,7 @@ export type OrderItem = {
   item_price_snapshot: number;
   quantity: number;
   subtotal: number;
+  prep_status: "대기" | "완료";
 };
 
 export type Payment = {

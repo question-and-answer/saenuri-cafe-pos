@@ -46,20 +46,6 @@ const roleLabel: Record<StaffRole, string> = {
   maker: "제조 담당",
 };
 
-const nextStatus: Record<OrderStatus, OrderStatus | null> = {
-  접수: "제조 중",
-  "제조 중": "제조 완료",
-  "제조 완료": "픽업 완료",
-  "픽업 완료": null,
-  취소: null,
-};
-
-const nextAction: Partial<Record<OrderStatus, string>> = {
-  접수: "만들기 시작",
-  "제조 중": "제조 완료",
-  "제조 완료": "픽업 완료",
-};
-
 const actionText: Record<string, string> = {
   staff_requested: "직원 승인 요청",
   staff_admin_login: "관리자 로그인",
@@ -70,6 +56,7 @@ const actionText: Record<string, string> = {
   order_created: "주문 생성",
   order_status_changed: "주문 상태 변경",
   order_canceled: "주문 취소",
+  item_prep_changed: "제조 항목 변경",
   payment_changed: "결제 변경",
   menu_created: "메뉴 추가",
   menu_changed: "메뉴 변경",
@@ -372,6 +359,7 @@ export default function Home() {
             staff={approved}
             orders={activeOrders}
             orderItems={orderItems}
+            menu={menu}
             settings={settings}
             setNotice={setNotice}
             log={log}
@@ -797,6 +785,7 @@ function MakerScreen({
   staff,
   orders,
   orderItems,
+  menu,
   settings,
   setNotice,
   log,
@@ -804,13 +793,19 @@ function MakerScreen({
   staff: Staff;
   orders: Order[];
   orderItems: OrderItem[];
+  menu: MenuItem[];
   settings: Settings;
   setNotice: (notice: Notice) => void;
   log: (action: string, targetType: string, targetId: string, beforeValue: unknown, afterValue: unknown) => Promise<void>;
 }) {
   const [collapsedOrders, setCollapsedOrders] = useState<Record<string, boolean>>({});
+  const [areaFilter, setAreaFilter] = useState("전체");
   const [now, setNow] = useState(() => Date.now());
   const showOrderTimer = settings.show_order_timer !== false;
+  const prepAreas = useMemo(
+    () => ["전체", ...Array.from(new Set(menu.filter((item) => item.prep_required !== false).map((item) => item.prep_area || "기본")))],
+    [menu],
+  );
 
   useEffect(() => {
     if (!showOrderTimer) return;
@@ -822,34 +817,73 @@ function MakerScreen({
     setCollapsedOrders((current) => ({ ...current, [orderId]: !current[orderId] }));
   };
 
-  const advance = async (order: Order) => {
+  const setItemDone = async (order: Order, item: OrderItem, done: boolean) => {
     if (!supabase) return;
-    const next = nextStatus[order.status];
-    if (!next) return;
-    if (next === "픽업 완료" && order.payment_status === "미결제" && !confirm("미결제 주문입니다. 픽업 완료로 바꿀까요?")) return;
-    const { error } = await supabase.from("orders").update({ status: next }).eq("id", order.id);
+    const next = done ? "완료" : "대기";
+    const { error } = await supabase.rpc("set_order_item_prep_status", {
+      p_staff_id: staff.id,
+      p_order_item_id: item.id,
+      p_prep_status: next,
+    });
     if (error) setNotice({ kind: "warn", text: error.message });
     else {
-      await log("order_status_changed", "order", order.id, { status: order.status }, { status: next });
-      setNotice({ kind: "ok", text: `#${orderNo(order.order_number)} ${next}` });
+      setNotice({ kind: "ok", text: `${item.item_name_snapshot} ${next}` });
     }
   };
 
+  const pickupOrder = async (order: Order) => {
+    if (!supabase) return;
+    if (order.payment_status === "미결제" && !confirm("미결제 주문입니다. 픽업 완료로 바꿀까요?")) return;
+    const { error } = await supabase.from("orders").update({ status: "픽업 완료" }).eq("id", order.id);
+    if (error) setNotice({ kind: "warn", text: error.message });
+    else {
+      await log("order_status_changed", "order", order.id, { status: order.status }, { status: "픽업 완료" });
+      setNotice({ kind: "ok", text: `#${orderNo(order.order_number)} 픽업 완료` });
+    }
+  };
+
+  const visibleTickets = orders
+    .map((order) => {
+      const items = orderItems
+        .filter((item) => item.order_id === order.id)
+        .filter((item) => {
+          const source = menu.find((menuItem) => menuItem.id === item.menu_item_id);
+          const prepRequired = source?.prep_required ?? true;
+          const prepArea = source?.prep_area || "기본";
+          return prepRequired && (areaFilter === "전체" || prepArea === areaFilter);
+        });
+      return { order, items };
+    })
+    .filter((ticket) => ticket.items.length > 0);
+
   return (
     <Panel title="제조 화면" icon={<Ticket size={20} />}>
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+        {prepAreas.map((area) => (
+          <button
+            key={area}
+            className={`h-11 shrink-0 rounded-lg px-4 text-sm font-black ${areaFilter === area ? "bg-emerald-700 text-white" : "bg-white"}`}
+            onClick={() => setAreaFilter(area)}
+          >
+            {area}
+          </button>
+        ))}
+      </div>
       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {orders.length ? (
-          orders.map((order) => (
+        {visibleTickets.length ? (
+          visibleTickets.map(({ order, items }) => (
             <KitchenTicket
               key={order.id}
               order={order}
-              items={orderItems.filter((item) => item.order_id === order.id)}
+              items={items}
               disabled={staff.role === "cashier"}
               collapsed={Boolean(collapsedOrders[order.id])}
               showTimer={showOrderTimer}
               now={now}
+              areaFilter={areaFilter}
               onToggleCollapsed={() => toggleCollapsed(order.id)}
-              onAdvance={() => advance(order)}
+              onSetItemDone={(item, done) => setItemDone(order, item, done)}
+              onPickup={() => pickupOrder(order)}
             />
           ))
         ) : (
@@ -867,8 +901,10 @@ function KitchenTicket({
   collapsed,
   showTimer,
   now,
+  areaFilter,
   onToggleCollapsed,
-  onAdvance,
+  onSetItemDone,
+  onPickup,
 }: {
   order: Order;
   items: OrderItem[];
@@ -876,8 +912,10 @@ function KitchenTicket({
   collapsed: boolean;
   showTimer: boolean;
   now: number;
+  areaFilter: string;
   onToggleCollapsed: () => void;
-  onAdvance: () => void;
+  onSetItemDone: (item: OrderItem, done: boolean) => void;
+  onPickup: () => void;
 }) {
   const timerEnd = order.status === "제조 완료" ? order.updated_at : now;
   const timerLabel = formatElapsedTime(order.created_at, timerEnd);
@@ -890,6 +928,7 @@ function KitchenTicket({
       >
         <span className="text-3xl font-black">#{orderNo(order.order_number)}</span>
         <span className="flex items-center gap-2">
+          <span className="rounded-full bg-stone-100 px-2 py-1 text-xs font-black">{areaFilter}</span>
           {showTimer ? <TimerBadge elapsed={timerLabel} stopped={order.status === "제조 완료"} /> : null}
           <StatusBadge status={order.status} />
         </span>
@@ -905,6 +944,7 @@ function KitchenTicket({
           <div className="mt-1 text-sm font-black text-stone-500">{shortTime(order.created_at)}</div>
         </div>
         <div className="flex items-center gap-2">
+          <span className="rounded-full bg-stone-100 px-2 py-1 text-xs font-black">{areaFilter}</span>
           {showTimer ? <TimerBadge elapsed={timerLabel} stopped={order.status === "제조 완료"} /> : null}
           <StatusBadge status={order.status} />
           <button className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-black" onClick={onToggleCollapsed}>
@@ -920,15 +960,26 @@ function KitchenTicket({
       ) : null}
       <div className="my-4 space-y-2">
         {items.map((item) => (
-          <div key={item.id} className="flex justify-between gap-2 text-xl font-black">
-            <span>{item.item_name_snapshot}</span>
-            <span>x {item.quantity}</span>
+          <div key={item.id} className="grid gap-2 rounded-lg bg-stone-50 p-3">
+            <div className="flex justify-between gap-2 text-xl font-black">
+              <span>{item.item_name_snapshot}</span>
+              <span>x {item.quantity}</span>
+            </div>
+            <button
+              className={`h-12 rounded-lg text-base font-black disabled:opacity-50 ${
+                item.prep_status === "완료" ? "bg-emerald-700 text-white" : "bg-stone-950 text-white"
+              }`}
+              disabled={disabled}
+              onClick={() => onSetItemDone(item, item.prep_status !== "완료")}
+            >
+              {item.prep_status === "완료" ? "완료 취소" : `${item.item_name_snapshot} 완료`}
+            </button>
           </div>
         ))}
       </div>
-      {nextAction[order.status] ? (
-        <button className="h-14 w-full rounded-lg bg-stone-950 text-lg font-black text-white disabled:bg-stone-300" disabled={disabled} onClick={onAdvance}>
-          {nextAction[order.status]}
+      {order.status === "제조 완료" ? (
+        <button className="h-14 w-full rounded-lg bg-stone-950 text-lg font-black text-white disabled:bg-stone-300" disabled={disabled} onClick={onPickup}>
+          픽업 완료
         </button>
       ) : null}
     </article>
@@ -1014,7 +1065,7 @@ function AdminScreen(props: {
       {tab === "preview" ? (
         <div className="grid gap-4">
           <CashierScreen staff={props.staff} menu={props.menu} orders={props.orders} orderItems={props.orderItems} settings={props.settings} setNotice={props.setNotice} refreshData={props.refreshData} />
-          <MakerScreen staff={props.staff} orders={props.activeOrders} orderItems={props.orderItems} settings={props.settings} setNotice={props.setNotice} log={props.log} />
+          <MakerScreen staff={props.staff} orders={props.activeOrders} orderItems={props.orderItems} menu={props.menu} settings={props.settings} setNotice={props.setNotice} log={props.log} />
         </div>
       ) : null}
     </section>
@@ -1158,6 +1209,7 @@ function MenuAdmin({
 }) {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("3000");
+  const [prepArea, setPrepArea] = useState("기본");
   const save = async (item: MenuItem, patch: Partial<MenuItem>) => {
     if (!supabase) return;
     const { error } = await supabase.from("menu_items").update(patch).eq("id", item.id);
@@ -1166,7 +1218,7 @@ function MenuAdmin({
   };
   const create = async () => {
     if (!supabase || !name.trim()) return;
-    const { data, error } = await supabase.from("menu_items").insert({ name: name.trim(), price: Number(price || 0), stock_unknown: true }).select().single();
+    const { data, error } = await supabase.from("menu_items").insert({ name: name.trim(), price: Number(price || 0), stock_unknown: true, prep_area: prepArea.trim() || "기본" }).select().single();
     if (error) setNotice({ kind: "warn", text: error.message });
     else {
       await log("menu_created", "menu_item", data.id, null, data);
@@ -1176,18 +1228,23 @@ function MenuAdmin({
   };
   return (
     <Panel title="메뉴 관리" icon={<Coffee size={20} />}>
-      <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_140px_110px]">
+      <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_140px_140px_110px]">
         <input className="h-12 rounded-lg border border-stone-300 px-3" value={name} onChange={(e) => setName(e.target.value)} placeholder="메뉴 이름" />
         <input className="h-12 rounded-lg border border-stone-300 px-3" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))} />
+        <input className="h-12 rounded-lg border border-stone-300 px-3" value={prepArea} onChange={(e) => setPrepArea(e.target.value)} placeholder="담당 구역" />
         <button className="h-12 rounded-lg bg-emerald-700 font-black text-white" onClick={create}>
           추가
         </button>
       </div>
       <div className="space-y-2">
         {menu.map((item) => (
-          <div key={item.id} className="grid gap-2 rounded-lg bg-white p-3 md:grid-cols-[1fr_120px_90px_90px]">
+          <div key={item.id} className="grid gap-2 rounded-lg bg-white p-3 md:grid-cols-[1fr_110px_130px_110px_90px_90px]">
             <input className="h-11 rounded-lg border border-stone-300 px-3 font-black" defaultValue={item.name} onBlur={(e) => e.target.value !== item.name && save(item, { name: e.target.value })} />
             <input className="h-11 rounded-lg border border-stone-300 px-3" inputMode="numeric" defaultValue={item.price} onBlur={(e) => Number(e.target.value) !== item.price && save(item, { price: Number(e.target.value || 0) })} />
+            <input className="h-11 rounded-lg border border-stone-300 px-3" defaultValue={item.prep_area || "기본"} onBlur={(e) => e.target.value !== item.prep_area && save(item, { prep_area: e.target.value.trim() || "기본" })} />
+            <button className={`h-11 rounded-lg font-black ${item.prep_required === false ? "bg-stone-200" : "bg-emerald-100 text-emerald-900"}`} onClick={() => save(item, { prep_required: item.prep_required === false })}>
+              {item.prep_required === false ? "완제품" : "제조 필요"}
+            </button>
             <button className={`h-11 rounded-lg font-black ${item.is_sold_out ? "bg-rose-700 text-white" : "bg-stone-100"}`} onClick={() => save(item, { is_sold_out: !item.is_sold_out })}>
               품절
             </button>

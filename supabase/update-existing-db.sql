@@ -1,6 +1,15 @@
 alter table orders
 add column if not exists memo text not null default '';
 
+alter table menu_items
+add column if not exists prep_required boolean not null default true;
+
+alter table menu_items
+add column if not exists prep_area text not null default '기본';
+
+alter table order_items
+add column if not exists prep_status text not null default '대기';
+
 create or replace function create_pos_order(
   p_staff_id uuid,
   p_items jsonb,
@@ -25,6 +34,7 @@ declare
   v_subtotal integer;
   v_before integer;
   v_after integer;
+  v_has_prep boolean := false;
 begin
   select * into v_staff from staff where id = p_staff_id and status = 'approved';
   if not found or v_staff.role not in ('admin', 'cashier', 'maker') then
@@ -79,13 +89,18 @@ begin
     v_subtotal := v_menu.price * v_qty;
     v_total := v_total + v_subtotal;
 
-    insert into order_items (order_id, menu_item_id, item_name_snapshot, item_price_snapshot, quantity, subtotal)
-    values (v_order_id, v_menu.id, v_menu.name, v_menu.price, v_qty, v_subtotal);
+    if v_menu.prep_required then
+      v_has_prep := true;
+    end if;
+
+    insert into order_items (order_id, menu_item_id, item_name_snapshot, item_price_snapshot, quantity, subtotal, prep_status)
+    values (v_order_id, v_menu.id, v_menu.name, v_menu.price, v_qty, v_subtotal, case when v_menu.prep_required then '대기' else '완료' end);
   end loop;
 
   update orders
   set total_amount = v_total,
-      change_amount = greatest(coalesce(p_received_amount, v_total) - v_total, 0)
+      change_amount = greatest(coalesce(p_received_amount, v_total) - v_total, 0),
+      status = case when v_has_prep then status else '제조 완료' end
   where id = v_order_id;
 
   insert into payments (order_id, payment_method, payment_status, amount, received_amount, change_amount)
@@ -98,6 +113,63 @@ begin
   );
 
   return v_order_id;
+end;
+$$;
+
+create or replace function set_order_item_prep_status(
+  p_staff_id uuid,
+  p_order_item_id uuid,
+  p_prep_status text
+)
+returns void
+language plpgsql
+security definer
+as $$
+declare
+  v_staff staff;
+  v_item order_items;
+  v_order orders;
+  v_pending_count integer;
+begin
+  select * into v_staff from staff where id = p_staff_id and status = 'approved';
+  if not found or v_staff.role not in ('admin', 'maker') then
+    raise exception '제조 권한이 없습니다.';
+  end if;
+  if p_prep_status not in ('대기', '완료') then
+    raise exception '제조 상태가 올바르지 않습니다.';
+  end if;
+
+  select * into v_item from order_items where id = p_order_item_id for update;
+  if not found then
+    raise exception '주문 항목을 찾을 수 없습니다.';
+  end if;
+
+  select * into v_order from orders where id = v_item.order_id for update;
+  if not found or v_order.status in ('픽업 완료', '취소') then
+    raise exception '변경할 수 없는 주문입니다.';
+  end if;
+
+  update order_items
+  set prep_status = p_prep_status
+  where id = p_order_item_id;
+
+  select count(*) into v_pending_count
+  from order_items oi
+  join menu_items m on m.id = oi.menu_item_id
+  where oi.order_id = v_item.order_id
+    and m.prep_required
+    and oi.prep_status <> '완료';
+
+  update orders
+  set status = case when v_pending_count = 0 then '제조 완료' else '제조 중' end
+  where id = v_item.order_id;
+
+  insert into activity_logs (actor_staff_id, actor_name, actor_role, action_type, target_type, target_id, before_value, after_value)
+  values (
+    p_staff_id, v_staff.name, v_staff.role, 'item_prep_changed', 'order_item', p_order_item_id::text,
+    jsonb_build_object('prep_status', v_item.prep_status),
+    jsonb_build_object('prep_status', p_prep_status)
+  );
 end;
 $$;
 
