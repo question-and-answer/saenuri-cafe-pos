@@ -46,6 +46,7 @@ const roleLabel: Record<StaffRole, string> = {
 
 const actionText: Record<string, string> = {
   staff_requested: "직원 승인 요청",
+  staff_login: "직원 입장",
   staff_admin_login: "관리자 로그인",
   staff_approved: "직원 승인",
   staff_rejected: "직원 거절",
@@ -492,10 +493,25 @@ function AccessScreen({
   setNotice: (notice: Notice) => void;
 }) {
   const [name, setName] = useState(current?.name ?? "");
+  const [mode, setMode] = useState<"staff" | "admin">("staff");
+  const [requestedRole, setRequestedRole] = useState<Exclude<StaffRole, "admin">>("cashier");
   const [adminCode, setAdminCode] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const submit = async () => {
+  const submitStaff = async () => {
+    if (!supabase) return;
+    setSaving(true);
+    const result = await supabase.rpc("staff_login", {
+      p_name: name,
+      p_role: requestedRole,
+      p_device_token: getDeviceSessionId(),
+    });
+    setSaving(false);
+    if (result.error) setNotice({ kind: "warn", text: result.error.message });
+    else setNotice({ kind: "ok", text: "직원으로 입장했습니다." });
+  };
+
+  const submitAdmin = async () => {
     if (!supabase) return;
     setSaving(true);
     const result = await supabase.rpc("admin_login", {
@@ -514,8 +530,25 @@ function AccessScreen({
         <Coffee className="mb-3 text-emerald-700" size={36} />
         <h1 className="text-2xl font-black">새누리교회 일일카페 POS</h1>
         <p className="mt-2 text-sm text-stone-600">
-          관리자 코드로 로그인하면 주문, 제조, 관리 화면을 모두 사용할 수 있습니다.
+          직원은 이름만 입력하고 바로 사용합니다. 관리자는 관리자 코드로 로그인합니다.
         </p>
+
+        <div className="mt-5 grid grid-cols-2 rounded-lg bg-stone-100 p-1">
+          <button
+            className={`h-12 rounded-md text-sm font-black ${mode === "staff" ? "bg-white shadow-sm" : "text-stone-600"}`}
+            onClick={() => setMode("staff")}
+            type="button"
+          >
+            직원 입장
+          </button>
+          <button
+            className={`h-12 rounded-md text-sm font-black ${mode === "admin" ? "bg-white shadow-sm" : "text-stone-600"}`}
+            onClick={() => setMode("admin")}
+            type="button"
+          >
+            관리자 로그인
+          </button>
+        </div>
 
         <label className="mt-5 block text-sm font-black">이름</label>
         <input
@@ -525,21 +558,45 @@ function AccessScreen({
           placeholder="예: 박지후"
         />
 
-        <label className="mt-4 block text-sm font-black">관리자 코드</label>
-        <input
-          className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
-          type="password"
-          value={adminCode}
-          onChange={(event) => setAdminCode(event.target.value)}
-          placeholder="관리자 코드"
-        />
+        {mode === "staff" ? (
+          <>
+            <label className="mt-4 block text-sm font-black">시작 화면</label>
+            <div className="mt-2 grid grid-cols-2 rounded-lg bg-stone-100 p-1">
+              <button
+                className={`h-12 rounded-md text-sm font-black ${requestedRole === "cashier" ? "bg-white shadow-sm" : "text-stone-600"}`}
+                onClick={() => setRequestedRole("cashier")}
+                type="button"
+              >
+                주문 담당
+              </button>
+              <button
+                className={`h-12 rounded-md text-sm font-black ${requestedRole === "maker" ? "bg-white shadow-sm" : "text-stone-600"}`}
+                onClick={() => setRequestedRole("maker")}
+                type="button"
+              >
+                제조 담당
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <label className="mt-4 block text-sm font-black">관리자 코드</label>
+            <input
+              className="mt-2 h-12 w-full rounded-lg border border-stone-300 px-3"
+              type="password"
+              value={adminCode}
+              onChange={(event) => setAdminCode(event.target.value)}
+              placeholder="관리자 코드"
+            />
+          </>
+        )}
 
         <button
           className="mt-5 h-14 w-full rounded-lg bg-emerald-700 text-base font-black text-white disabled:opacity-50"
-          disabled={saving || name.trim().length < 1 || adminCode.length < 4}
-          onClick={submit}
+          disabled={saving || name.trim().length < 1 || (mode === "admin" && adminCode.length < 4)}
+          onClick={mode === "staff" ? submitStaff : submitAdmin}
         >
-          {saving ? "처리 중" : "관리자 로그인"}
+          {saving ? "처리 중" : mode === "staff" ? "직원 입장" : "관리자 로그인"}
         </button>
       </section>
     </main>

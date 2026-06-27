@@ -25,6 +25,43 @@ add column if not exists prep_status text not null default '대기';
 alter table order_items
 add column if not exists sort_order integer not null default 0;
 
+create or replace function staff_login(
+  p_name text,
+  p_role text,
+  p_device_token text
+)
+returns staff
+language plpgsql
+security definer
+as $$
+declare
+  v_staff staff;
+begin
+  if length(trim(coalesce(p_name, ''))) < 1 then
+    raise exception '이름을 입력해 주세요.';
+  end if;
+  if p_role not in ('cashier', 'maker') then
+    raise exception '주문 담당 또는 제조 담당을 선택해 주세요.';
+  end if;
+
+  insert into staff (name, requested_role, role, status, device_token, approved_at)
+  values (trim(p_name), p_role, p_role, 'approved', p_device_token, now())
+  on conflict (device_token) do update
+    set name = excluded.name,
+        requested_role = excluded.requested_role,
+        role = excluded.role,
+        status = 'approved',
+        approved_at = coalesce(staff.approved_at, now()),
+        revoked_at = null
+  returning * into v_staff;
+
+  insert into activity_logs (actor_staff_id, actor_name, actor_role, action_type, target_type, target_id, after_value)
+  values (v_staff.id, v_staff.name, v_staff.role, 'staff_login', 'staff', v_staff.id::text, to_jsonb(v_staff));
+
+  return v_staff;
+end;
+$$;
+
 create or replace function create_pos_order(
   p_staff_id uuid,
   p_items jsonb,
