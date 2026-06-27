@@ -58,6 +58,7 @@ export type OrderItem = {
   quantity: number;
   subtotal: number;
   prep_status: "대기" | "완료";
+  sort_order: number;
 };
 
 export type Payment = {

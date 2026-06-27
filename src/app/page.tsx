@@ -94,6 +94,14 @@ function newest<T extends { created_at: string }>(rows: T[]) {
   return [...rows].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
 }
 
+function stableOrderItems(items: OrderItem[]) {
+  return [...items].sort((a, b) => {
+    const orderGap = (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    if (orderGap !== 0) return orderGap;
+    return a.item_name_snapshot.localeCompare(b.item_name_snapshot, "ko");
+  });
+}
+
 export default function Home() {
   const [deviceToken, setDeviceToken] = useState("");
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -163,7 +171,7 @@ export default function Home() {
       setStaff(newest((staffResult.data ?? []) as Staff[]));
       setMenu(newest((menuResult.data ?? []) as MenuItem[]));
       setOrders(newest((ordersResult.data ?? []) as Order[]));
-      setOrderItems((itemResult.data ?? []) as OrderItem[]);
+      setOrderItems(stableOrderItems((itemResult.data ?? []) as OrderItem[]));
       setPayments((paymentResult.data ?? []) as Payment[]);
       setLogs(newest((logResult.data ?? []) as ActivityLog[]));
       setInventoryLogs(newest((inventoryResult.data ?? []) as InventoryLog[]));
@@ -1717,8 +1725,7 @@ function OrderList({ orders, orderItems }: { orders: Order[]; orderItems: OrderI
 }
 
 function itemsText(orderId: string, orderItems: OrderItem[]) {
-  return orderItems
-    .filter((item) => item.order_id === orderId)
+  return stableOrderItems(orderItems.filter((item) => item.order_id === orderId))
     .map((item) => `${item.item_name_snapshot} x${item.quantity}`)
     .join(", ");
 }

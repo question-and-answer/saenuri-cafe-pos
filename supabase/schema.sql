@@ -78,7 +78,8 @@ create table order_items (
   item_price_snapshot integer not null,
   quantity integer not null check (quantity > 0),
   subtotal integer not null,
-  prep_status text not null default '대기' check (prep_status in ('대기', '완료'))
+  prep_status text not null default '대기' check (prep_status in ('대기', '완료')),
+  sort_order integer not null default 0
 );
 
 create table payments (
@@ -254,6 +255,7 @@ declare
   v_before integer;
   v_after integer;
   v_has_prep boolean := false;
+  v_sort_order integer := 0;
 begin
   select * into v_staff from staff where id = p_staff_id and status = 'approved';
   if not found or v_staff.role not in ('admin', 'cashier', 'maker') then
@@ -283,6 +285,7 @@ begin
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
+    v_sort_order := v_sort_order + 1;
     v_qty := (v_item->>'quantity')::integer;
     select * into v_menu from menu_items where id = (v_item->>'menuItemId')::uuid for update;
     if not found or v_menu.is_hidden or v_menu.is_sold_out then
@@ -314,8 +317,8 @@ begin
       v_has_prep := true;
     end if;
 
-    insert into order_items (order_id, menu_item_id, item_name_snapshot, item_price_snapshot, quantity, subtotal, prep_status)
-    values (v_order_id, v_menu.id, v_menu.name, v_menu.price, v_qty, v_subtotal, case when v_menu.prep_required then '대기' else '완료' end);
+    insert into order_items (order_id, menu_item_id, item_name_snapshot, item_price_snapshot, quantity, subtotal, prep_status, sort_order)
+    values (v_order_id, v_menu.id, v_menu.name, v_menu.price, v_qty, v_subtotal, case when v_menu.prep_required then '대기' else '완료' end, v_sort_order);
   end loop;
 
   update orders
