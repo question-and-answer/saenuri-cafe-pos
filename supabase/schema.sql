@@ -401,12 +401,12 @@ begin
     where id = v_row.menu_item_id;
   end loop;
 
-  delete from backups;
-  delete from inventory_logs;
-  delete from payments;
-  delete from order_items;
-  delete from orders;
-  delete from activity_logs;
+  delete from backups where true;
+  delete from inventory_logs where true;
+  delete from payments where true;
+  delete from order_items where true;
+  delete from orders where true;
+  delete from activity_logs where true;
 
   update settings
   set next_order_number = 1
