@@ -822,8 +822,10 @@ function CashierScreen({
           </div>
         </Panel>
 
+        <div className="hidden md:block xl:hidden">{orderPanel}</div>
+
         <button
-          className="h-12 w-full rounded-lg bg-white text-sm font-black shadow-sm"
+          className="h-11 w-full rounded-lg bg-white text-sm font-black text-stone-600 shadow-sm"
           onClick={() => setRecentOpen((current) => !current)}
         >
           {recentOpen ? "최근 주문 닫기" : "최근 주문 보기"}
@@ -839,14 +841,14 @@ function CashierScreen({
       <aside className="hidden xl:block">{orderPanel}</aside>
 
       <button
-        className="fixed bottom-4 left-4 right-4 z-30 h-14 rounded-lg bg-emerald-700 text-base font-black text-white shadow-lg xl:hidden"
+        className="fixed bottom-4 left-4 right-4 z-30 h-14 rounded-lg bg-emerald-700 text-base font-black text-white shadow-lg md:hidden"
         onClick={() => setCartOpen(true)}
       >
         현재 주문 {lines.reduce((sum, line) => sum + line.quantity, 0)}개 · {won(total)}
       </button>
 
       {cartOpen ? (
-        <div className="fixed inset-0 z-50 xl:hidden">
+        <div className="fixed inset-0 z-50 md:hidden">
           <button className="absolute inset-0 bg-stone-950/55" aria-label="현재 주문 닫기" onClick={() => setCartOpen(false)} />
           <div className="absolute bottom-0 right-0 top-0 w-[88vw] max-w-md overflow-y-auto bg-[#f7f7f4] p-4 shadow-2xl">
             <button
