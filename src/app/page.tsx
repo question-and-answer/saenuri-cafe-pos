@@ -94,6 +94,10 @@ function newest<T extends { created_at: string }>(rows: T[]) {
   return [...rows].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
 }
 
+function oldest<T extends { created_at: string }>(rows: T[]) {
+  return [...rows].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+}
+
 function stableOrderItems(items: OrderItem[]) {
   return [...items].sort((a, b) => {
     const orderGap = (a.sort_order ?? 0) - (b.sort_order ?? 0);
@@ -169,7 +173,7 @@ export default function Home() {
       setNotice({ kind: "warn", text: error.message });
     } else {
       setStaff(newest((staffResult.data ?? []) as Staff[]));
-      setMenu(newest((menuResult.data ?? []) as MenuItem[]));
+      setMenu(oldest((menuResult.data ?? []) as MenuItem[]));
       setOrders(newest((ordersResult.data ?? []) as Order[]));
       setOrderItems(stableOrderItems((itemResult.data ?? []) as OrderItem[]));
       setPayments((paymentResult.data ?? []) as Payment[]);
