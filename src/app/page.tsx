@@ -120,7 +120,7 @@ export default function Home() {
   const [settings, setSettings] = useState<Settings>(emptySettings);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<Notice>(null);
-  const [view, setView] = useState<View>("cashier");
+  const [view, setView] = useState<View | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const seenPendingApprovalCountRef = useRef<number | null>(null);
 
@@ -294,12 +294,8 @@ export default function Home() {
   const activeOrders = orders.filter((order) => !["픽업 완료", "취소"].includes(order.status));
   const completedOrders = orders.filter((order) => order.status === "픽업 완료");
   const canceledOrders = orders.filter((order) => order.status === "취소");
-  const activeView =
-    approved.role === "maker" && view !== "maker"
-      ? "maker"
-      : approved.role !== "admin" && view === "admin"
-        ? "cashier"
-        : view;
+  const defaultView: View = approved.role === "maker" ? "maker" : "cashier";
+  const activeView: View = approved.role !== "admin" && view === "admin" ? "cashier" : (view ?? defaultView);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f7f7f4] pb-24 text-stone-950">
@@ -359,7 +355,7 @@ export default function Home() {
           ) : null}
         </nav>
 
-        {activeView === "cashier" && ["admin", "cashier"].includes(approved.role!) ? (
+        {activeView === "cashier" ? (
           <CashierScreen
             staff={approved}
             menu={menu}

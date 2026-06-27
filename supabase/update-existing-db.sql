@@ -27,7 +27,7 @@ declare
   v_after integer;
 begin
   select * into v_staff from staff where id = p_staff_id and status = 'approved';
-  if not found or v_staff.role not in ('admin', 'cashier') then
+  if not found or v_staff.role not in ('admin', 'cashier', 'maker') then
     raise exception '주문 권한이 없습니다.';
   end if;
   if p_payment_method not in ('현금', '계좌이체') or p_payment_status not in ('결제 완료', '미결제') then
