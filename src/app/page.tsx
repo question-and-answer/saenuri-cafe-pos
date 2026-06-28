@@ -106,6 +106,19 @@ function stableOrderItems(items: OrderItem[]) {
   });
 }
 
+function hasTemperatureChoice(item: MenuItem) {
+  return item.name.trim() === "루이보스";
+}
+
+function cartKey(menuItemId: string, option?: string | null) {
+  return option ? `${menuItemId}::${option}` : menuItemId;
+}
+
+function parseCartKey(key: string) {
+  const [menuItemId, option] = key.split("::");
+  return { menuItemId, option: option || null };
+}
+
 export default function Home() {
   const [deviceToken, setDeviceToken] = useState("");
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -631,8 +644,11 @@ function CashierScreen({
 
   const availableMenu = menu.filter((item) => !item.is_hidden);
   const lines = Object.entries(cart)
-    .map(([id, quantity]) => ({ item: menu.find((entry) => entry.id === id), quantity }))
-    .filter((line): line is { item: MenuItem; quantity: number } => Boolean(line.item) && line.quantity > 0);
+    .map(([key, quantity]) => {
+      const parsed = parseCartKey(key);
+      return { key, ...parsed, item: menu.find((entry) => entry.id === parsed.menuItemId), quantity };
+    })
+    .filter((line): line is { key: string; menuItemId: string; option: string | null; item: MenuItem; quantity: number } => Boolean(line.item) && line.quantity > 0);
   const total = lines.reduce((sum, line) => sum + line.item.price * line.quantity, 0);
   const change = Math.max(Number(received || 0) - total, 0);
   const showCashReceived = settings.show_cash_received !== false;
@@ -645,7 +661,7 @@ function CashierScreen({
     setSaving(true);
     const { error } = await supabase.rpc("create_pos_order", {
       p_staff_id: staff.id,
-      p_items: lines.map((line) => ({ menuItemId: line.item.id, quantity: line.quantity })),
+      p_items: lines.map((line) => ({ menuItemId: line.item.id, quantity: line.quantity, option: line.option })),
       p_payment_method: method,
       p_payment_status: effectivePaymentStatus,
       p_received_amount: method === "현금" && showCashReceived ? Number(received || total) : null,
@@ -670,15 +686,15 @@ function CashierScreen({
       <div className="space-y-2">
         {lines.length ? (
           lines.map((line) => (
-            <div key={line.item.id} className="flex items-center justify-between rounded-lg bg-stone-50 p-3">
+            <div key={line.key} className="flex items-center justify-between rounded-lg bg-stone-50 p-3">
               <div>
-                <div className="font-black">{line.item.name}</div>
+                <div className="font-black">{line.option ? `${line.item.name} ${line.option}` : line.item.name}</div>
                 <div className="text-sm text-stone-600">{won(line.item.price)}</div>
               </div>
               <div className="flex items-center gap-2">
-                <QtyButton onClick={() => setCart((current) => ({ ...current, [line.item.id]: Math.max(line.quantity - 1, 0) }))}>-</QtyButton>
+                <QtyButton onClick={() => setCart((current) => ({ ...current, [line.key]: Math.max(line.quantity - 1, 0) }))}>-</QtyButton>
                 <strong className="w-8 text-center">{line.quantity}</strong>
-                <QtyButton onClick={() => setCart((current) => ({ ...current, [line.item.id]: line.quantity + 1 }))}>+</QtyButton>
+                <QtyButton onClick={() => setCart((current) => ({ ...current, [line.key]: line.quantity + 1 }))}>+</QtyButton>
               </div>
             </div>
           ))
@@ -767,7 +783,14 @@ function CashierScreen({
           <div className="grid grid-cols-[repeat(auto-fit,minmax(138px,1fr))] gap-3">
             {availableMenu.map((item) => {
               const soldOut = item.is_sold_out || (!item.stock_unknown && item.stock_quantity === 0);
-              const quantity = cart[item.id] ?? 0;
+              const hasOptions = hasTemperatureChoice(item);
+              const hotKey = cartKey(item.id, "핫");
+              const iceKey = cartKey(item.id, "아이스");
+              const quantity = hasOptions ? (cart[hotKey] ?? 0) + (cart[iceKey] ?? 0) : cart[item.id] ?? 0;
+              const addItem = (option?: string) => {
+                const key = cartKey(item.id, option);
+                setCart((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }));
+              };
               const itemInfo = (
                 <>
                   <div className="text-xl font-black">{item.name}</div>
@@ -788,34 +811,48 @@ function CashierScreen({
                     <button
                       className="block w-full flex-1 rounded-md text-left active:bg-emerald-50 disabled:cursor-not-allowed"
                       disabled={soldOut}
-                      onClick={() => setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }))}
+                      onClick={() => addItem(hasOptions ? "아이스" : undefined)}
                     >
                       {itemInfo}
                     </button>
                   ) : (
                     <div className="text-left">{itemInfo}</div>
                   )}
-                  <div className="mt-2 grid grid-cols-[40px_1fr_40px] items-center gap-1">
-                    <MenuQtyButton
-                      disabled={quantity === 0}
-                      onClick={() =>
-                        setCart((current) => ({ ...current, [item.id]: Math.max((current[item.id] ?? 0) - 1, 0) }))
-                      }
-                    >
-                      -
-                    </MenuQtyButton>
-                    <div className={`grid h-10 place-items-center rounded-lg text-2xl font-black ${quantity ? "text-emerald-800" : "text-stone-400"}`}>
-                      {quantity}
+                  {hasOptions ? (
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <button className="h-11 rounded-lg bg-stone-950 text-sm font-black text-white disabled:bg-stone-300" disabled={soldOut} onClick={() => addItem("핫")}>
+                        핫 +
+                      </button>
+                      <button className="h-11 rounded-lg bg-emerald-700 text-sm font-black text-white disabled:bg-stone-300" disabled={soldOut} onClick={() => addItem("아이스")}>
+                        아이스 +
+                      </button>
+                      <div className={`col-span-2 grid h-9 place-items-center rounded-lg text-xl font-black ${quantity ? "bg-emerald-50 text-emerald-800" : "text-stone-400"}`}>
+                        {quantity}
+                      </div>
                     </div>
-                    <MenuQtyButton
-                      disabled={soldOut}
-                      onClick={() => {
-                        if (!soldOut) setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }));
-                      }}
-                    >
-                      +
-                    </MenuQtyButton>
-                  </div>
+                  ) : (
+                    <div className="mt-2 grid grid-cols-[40px_1fr_40px] items-center gap-1">
+                      <MenuQtyButton
+                        disabled={quantity === 0}
+                        onClick={() =>
+                          setCart((current) => ({ ...current, [item.id]: Math.max((current[item.id] ?? 0) - 1, 0) }))
+                        }
+                      >
+                        -
+                      </MenuQtyButton>
+                      <div className={`grid h-10 place-items-center rounded-lg text-2xl font-black ${quantity ? "text-emerald-800" : "text-stone-400"}`}>
+                        {quantity}
+                      </div>
+                      <MenuQtyButton
+                        disabled={soldOut}
+                        onClick={() => {
+                          if (!soldOut) addItem();
+                        }}
+                      >
+                        +
+                      </MenuQtyButton>
+                    </div>
+                  )}
                 </div>
               );
             })}

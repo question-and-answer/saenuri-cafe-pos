@@ -293,6 +293,8 @@ declare
   v_after integer;
   v_has_prep boolean := false;
   v_sort_order integer := 0;
+  v_option text;
+  v_item_name text;
 begin
   select * into v_staff from staff where id = p_staff_id and status = 'approved';
   if not found or v_staff.role not in ('admin', 'cashier', 'maker') then
@@ -324,12 +326,22 @@ begin
   loop
     v_sort_order := v_sort_order + 1;
     v_qty := (v_item->>'quantity')::integer;
+    v_option := nullif(trim(coalesce(v_item->>'option', '')), '');
     select * into v_menu from menu_items where id = (v_item->>'menuItemId')::uuid for update;
     if not found or v_menu.is_hidden or v_menu.is_sold_out then
       raise exception '주문할 수 없는 메뉴가 있습니다.';
     end if;
     if v_qty < 1 then
       raise exception '수량이 올바르지 않습니다.';
+    end if;
+    if trim(v_menu.name) = '루이보스' then
+      v_option := coalesce(v_option, '아이스');
+      if v_option not in ('핫', '아이스') then
+        raise exception '루이보스는 핫 또는 아이스만 선택할 수 있습니다.';
+      end if;
+      v_item_name := v_menu.name || ' ' || v_option;
+    else
+      v_item_name := v_menu.name;
     end if;
 
     if not v_menu.stock_unknown then
@@ -355,7 +367,7 @@ begin
     end if;
 
     insert into order_items (order_id, menu_item_id, item_name_snapshot, item_price_snapshot, quantity, subtotal, prep_status, sort_order)
-    values (v_order_id, v_menu.id, v_menu.name, v_menu.price, v_qty, v_subtotal, case when v_menu.prep_required then '대기' else '완료' end, v_sort_order);
+    values (v_order_id, v_menu.id, v_item_name, v_menu.price, v_qty, v_subtotal, case when v_menu.prep_required then '대기' else '완료' end, v_sort_order);
   end loop;
 
   update orders
